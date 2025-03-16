@@ -21,7 +21,7 @@ Python 3.12.2 (Version 3.13.x or later may not work)
    ```
 
 ## USAGE
-Run snex.pay. The script takes 2 parameters: 
+Run snex.py. The script takes 2 parameters: 
 - the name of the source Supernote notebook
 - the series ("N5" for Manta or "N6" for Nomad) of the tablet that created the notebook
 
