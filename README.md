@@ -18,6 +18,7 @@ Python 3.12.2 (Version 3.13.x or later may not work)
    ```bash
    git clone https://github.com/mmujynya/snex.git
    cd snex
+   pip install -r requirements.txt
    ```
 
 ## USAGE

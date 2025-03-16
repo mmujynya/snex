@@ -1,0 +1,5 @@
+pillow==11.1.0
+potracer==0.0.4
+pypng==0.20220715.0
+svglib==1.5.1
+svgwrite==1.4.3
