@@ -120,12 +120,15 @@ def save_json(afilename, ajson):
 def topright_to_topleft(a_reversed_point, series):
     """ Screen coordinates conversion
         Warning: reverts back to x & y """
-    max_horizontal_pixels, max_vertical_pixels, adb_screen_max_x, adb_screen_max_y = series_bounds(series)
-    a_point = (
-        max(min(
-            round((adb_screen_max_x+OFFSET_T_X-a_reversed_point[1])*max_horizontal_pixels/adb_screen_max_x), max_horizontal_pixels), 0),
-        max(min(round((a_reversed_point[0]+OFFSET_T_Y)*max_vertical_pixels/adb_screen_max_y), max_vertical_pixels), 0)
-    )
+    try:
+        max_horizontal_pixels, max_vertical_pixels, adb_screen_max_x, adb_screen_max_y = series_bounds(series)
+        a_point = (
+            max(min(
+                round((adb_screen_max_x+OFFSET_T_X-a_reversed_point[1])*max_horizontal_pixels/adb_screen_max_x), max_horizontal_pixels), 0),
+            max(min(round((a_reversed_point[0]+OFFSET_T_Y)*max_vertical_pixels/adb_screen_max_y), max_vertical_pixels), 0)
+        )
+    except Exception as e:
+        print(f'**-topright_to_topleft:{e}')
     return a_point
 
 

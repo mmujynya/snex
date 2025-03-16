@@ -18,8 +18,11 @@ INITIAL_Y = 0
 COLORS = {
     0: "#1e1e1e",
     157: "#9d9d9d",
+    158: "#9d9d9d",
     201: "#c9c9c9",
-    254: "#ffffff"
+    202: "#c9c9c9",
+    254: "#ffffff",
+    255: "#ffffff"
 }
 MYSCRIPT_RATIO = 12
 VERSION = 1.0
@@ -155,7 +158,8 @@ def create_pages(
 
 
 def add_freedraw_to_page(
-        color, vector_points, page_number, excalidraw_file, min_c_x, min_c_y, series, screen_ratio=SCREEN_RATIO):
+        color, vector_points, page_number, excalidraw_file, min_c_x, min_c_y, series, pen_stroke_width=0.3,
+        screen_ratio=SCREEN_RATIO):
     """
     Add a freedraw element (hand-drawn stroke) to a specific page (frame) in the Excalidraw file.
 
@@ -166,85 +170,88 @@ def add_freedraw_to_page(
         excalidraw_file (dict): The Excalidraw file structure (as returned by create_pages).
 
     """
-    # Find the frame corresponding to the given page number.
-    vector_points = [(int((x[0]-min_c_x)/screen_ratio), int((x[1]-min_c_y)/screen_ratio)) for x in vector_points]
+    try:
+        # Find the frame corresponding to the given page number.
+        vector_points = [(int((x[0]-min_c_x)/screen_ratio), int((x[1]-min_c_y)/screen_ratio)) for x in vector_points]
 
-    target_frame = None
-    for el in excalidraw_file.get("elements", []):
-        if el.get("type") == "frame" and el.get("name") == f"Page {page_number}":
-            target_frame = el
-            break
-    if target_frame is None:
-        raise ValueError(f"Frame for Page {page_number} not found.")
+        target_frame = None
+        for el in excalidraw_file.get("elements", []):
+            if el.get("type") == "frame" and el.get("name") == f"Page {page_number}":
+                target_frame = el
+                break
+        if target_frame is None:
+            raise ValueError(f"Frame for Page {page_number} not found.")
 
-    # Set the drawing's position relative to the frame.
-    base_width = target_frame.get("width", 0)
-    base_height = target_frame.get("height", 0)
+        # Set the drawing's position relative to the frame.
+        base_width = target_frame.get("width", 0)
+        base_height = target_frame.get("height", 0)
 
-    # Frame Positionning
-    denominator_x = RESOLUTIONS[series][0]
-    denominator_y = RESOLUTIONS[series][1]
+        # Frame Positionning
+        denominator_x = RESOLUTIONS[series][0]
+        denominator_y = RESOLUTIONS[series][1]
 
-    if HORIZONTAL_PAGES:
-        freedraw_x = (int(page_number) - 1)*(PAGE_SPACING + base_width) + min_c_x + base_width * min_c_x / denominator_x
-        freedraw_y = min_c_y+base_height*min_c_y/denominator_y
-    else:
-        freedraw_x = min_c_x+base_width*min_c_x/denominator_x
-        freedraw_y = (int(page_number)-1)*(PAGE_SPACING+base_height)+min_c_y+base_height*min_c_y/denominator_y
+        if HORIZONTAL_PAGES:
+            freedraw_x = (int(page_number) - 1)*(PAGE_SPACING + base_width) + min_c_x + base_width * min_c_x / denominator_x
+            freedraw_y = min_c_y+base_height*min_c_y/denominator_y
+        else:
+            freedraw_x = min_c_x+base_width*min_c_x/denominator_x
+            freedraw_y = (int(page_number)-1)*(PAGE_SPACING+base_height)+min_c_y+base_height*min_c_y/denominator_y
 
-    # Compute the bounding box of the provided vector points.
-    if vector_points:
-        min_x = min(pt[0] for pt in vector_points)
-        max_x = max(pt[0] for pt in vector_points)
-        min_y = min(pt[1] for pt in vector_points)
-        max_y = max(pt[1] for pt in vector_points)
-    else:
-        min_x = max_x = min_y = max_y = 0
+        # Compute the bounding box of the provided vector points.
+        if vector_points:
+            min_x = min(pt[0] for pt in vector_points)
+            max_x = max(pt[0] for pt in vector_points)
+            min_y = min(pt[1] for pt in vector_points)
+            max_y = max(pt[1] for pt in vector_points)
+        else:
+            min_x = max_x = min_y = max_y = 0
 
-    width = max_x - min_x
-    height = max_y - min_y
+        width = max_x - min_x
+        height = max_y - min_y
 
-    vector_points = [(x[0]-min_c_x, x[1]-min_c_y) for x in vector_points]
+        vector_points = [(x[0]-min_c_x, x[1]-min_c_y) for x in vector_points]
 
-    # Remove adjacent duplicates using list comprehension and enumerate
-    vector_points = [pt for i, pt in enumerate(vector_points) if i == 0 or pt != vector_points[i-1]]
+        # Remove adjacent duplicates using list comprehension and enumerate
+        vector_points = [pt for i, pt in enumerate(vector_points) if i == 0 or pt != vector_points[i-1]]
 
-    # Create the freedraw element.
-    freedraw_element = {
-        "id": generate_excalidraw_id(),
-        "type": "freedraw",
-        "x": freedraw_x,
-        "y": freedraw_y,
-        "width": width,
-        "height": height,
-        "angle": 0,
-        "strokeColor": color,
-        "backgroundColor": "transparent",
-        "fillStyle": "solid",
-        "strokeWidth": 0.3,
-        "strokeStyle": "solid",
-        "roughness": 1,
-        "opacity": 100,
-        "groupIds": [],
-        "frameId": target_frame["id"],
-        "index": f"a{random.randint(1, 1000)}",  # Arbitrary index for ordering.
-        "roundness": None,
-        "seed": random.randint(0, 1000000000),
-        "version": random.randint(1, 1000),
-        "versionNonce": random.randint(0, 1000000000),
-        "isDeleted": False,
-        "boundElements": None,
-        "updated": int(time.time() * 1000),
-        "link": None,
-        "locked": False,
-        "points": vector_points,
-        "pressures": [],
-        "simulatePressure": True,
-        "lastCommittedPoint": vector_points[-1] if vector_points else None,
-    }
+        # Create the freedraw element.
+        freedraw_element = {
+            "id": generate_excalidraw_id(),
+            "type": "freedraw",
+            "x": freedraw_x,
+            "y": freedraw_y,
+            "width": width,
+            "height": height,
+            "angle": 0,
+            "strokeColor": color,
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": pen_stroke_width,
+            "strokeStyle": "solid",
+            "roughness": 1,
+            "opacity": 100,
+            "groupIds": [],
+            "frameId": target_frame["id"],
+            "index": f"a{random.randint(1, 1000)}",  # Arbitrary index for ordering.
+            "roundness": None,
+            "seed": random.randint(0, 1000000000),
+            "version": random.randint(1, 1000),
+            "versionNonce": random.randint(0, 1000000000),
+            "isDeleted": False,
+            "boundElements": None,
+            "updated": int(time.time() * 1000),
+            "link": None,
+            "locked": False,
+            "points": vector_points,
+            "pressures": [],
+            "simulatePressure": True,
+            "lastCommittedPoint": vector_points[-1] if vector_points else None,
+        }
 
-    # Append the new freedraw element to the Excalidraw file.
-    excalidraw_file["elements"].append(freedraw_element)
+        # Append the new freedraw element to the Excalidraw file.
+        excalidraw_file["elements"].append(freedraw_element)
+    except Exception as e:
+        print(f'**-add_freedraw_to_page: {e}')
 
 
 def add_ocr_to_page(
@@ -349,6 +356,7 @@ def note2ex(note_fn, series):
 
         exca_file, _ = create_pages(series, page_nb, ocr_layer=ocr_file)
 
+        pen_stroke_width = 0.3
         # Parse the dictionary of totalpath objects
 
         for apage, avalue in pen_strokes_dict.items():
@@ -360,12 +368,25 @@ def note2ex(note_fn, series):
                 min_c_x = a_stroke['min_c_x']
                 min_c_y = a_stroke['min_c_y']
 
-                a_stroke_color = COLORS[a_stroke['color']]
+                try:
+                    a_stroke_color = COLORS[a_stroke['color']]
+                except Exception as e:
+                    print(f'**- Color unknown: {e}')
+                    a_stroke_color = "#9d9d9d",
+
+                a_stroke_weight = a_stroke['weight']
+                if a_stroke_weight <= 500:
+                    pen_stroke_width = 0.3
+                elif a_stroke_weight <= 1000:
+                    pen_stroke_width = 1
+                else:
+                    pen_stroke_width = 2
+
                 a_stroke_vector_points = a_stroke['vector_points']
                 normalized_points = [
                     pysn.topright_to_topleft(x, series) for x in a_stroke_vector_points]
-
-                add_freedraw_to_page(a_stroke_color, normalized_points, apage, exca_file, min_c_x, min_c_y, series)
+                add_freedraw_to_page(a_stroke_color, normalized_points, apage, exca_file, min_c_x, min_c_y,
+                                     series, pen_stroke_width=pen_stroke_width)
 
             if ocr_file:
                 page_ocr = str(int(apage)-1)
@@ -393,6 +414,9 @@ def note2ex(note_fn, series):
         print(f'Generated file: {output_fn}')
     except Exception as e:
         print(f'*** note2ex: {e}')
+        print(ocr_file)
+        print(page_nb)
+        print(f'---apage:{apage}')
 
 
 if __name__ == "__main__":
