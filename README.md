@@ -1,0 +1,2 @@
+# snex
+Supernote - Excalidraw tools
