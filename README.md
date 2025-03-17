@@ -1,5 +1,7 @@
 # SNEX (SN Excalidraw)
 Supernote - Excalidraw tools
+Exports Supernote notebooks to [Excalidraw](https://excalidraw.com/) format
+See [YouTube video](https://youtu.be/p1sAisn_xd4?si=bEZ4xpuXrVyZGTjm)
 
 ## NOTICE & Credit: 
 
