@@ -268,8 +268,12 @@ def get_pen_strokes_dict(note_fn, search_keyword=None):
                     pen_strokes_list = []
                     a_position = page_totalpath_address + 8
                     for pen_stroke_index in range(page_totalpath_strokes_nb):
+
                         _, pen_stroke_size = read_endian_int_at_position(note_file_binaries, a_position)
                         _, pen_type = read_endian_int_at_position(note_file_binaries, a_position + 4, num_bytes=1)
+                        # We are skipping the below because it pertains to headings and links (not pen strokes)
+                        if pen_type == 0:
+                            continue
                         _, pen_color = read_endian_int_at_position(note_file_binaries, a_position + 8, num_bytes=1)
                         _, pen_weight = read_endian_int_at_position(note_file_binaries, a_position + 12, num_bytes=2)
                         _, min_contours_x = read_endian_int_at_position(note_file_binaries, a_position + 104)
