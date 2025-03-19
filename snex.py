@@ -25,7 +25,7 @@ COLORS = {
     255: "#ffffff"
 }
 MYSCRIPT_RATIO = 12
-VERSION = 1.0
+VERSION = 1.01
 
 
 def generate_excalidraw_id(use_uuid=True, length=20):
@@ -87,7 +87,7 @@ def create_pages(
             "strokeColor": "#bbb",
             "backgroundColor": "transparent",
             "fillStyle": "solid",
-            "strokeWidth": 2,
+            "strokeWidth": 0.3,
             "strokeStyle": "solid",
             "roughness": 0,
             "opacity": 100,
@@ -119,7 +119,7 @@ def create_pages(
                 "strokeColor": "#bbb",
                 "backgroundColor": "transparent",
                 "fillStyle": "solid",
-                "strokeWidth": 2,
+                "strokeWidth": 0.3,
                 "strokeStyle": "solid",
                 "roughness": 0,
                 "opacity": 0,
@@ -157,30 +157,70 @@ def create_pages(
     return excalidraw_file, page_mapping
 
 
-def add_freedraw_to_page(
-        color, vector_points, page_number, excalidraw_file, min_c_x, min_c_y, series, pen_stroke_width=0.3,
+def page_number2frame(excalidraw_file, page_number, ocr=False):
+    """ Returns a frame from a page number """
+
+    target_frame = None
+    target_frame_ocr = None
+
+    # Find the page frame
+    for el in excalidraw_file.get("elements", []):
+        if el.get("type") == "frame" and el.get("name") == f"Page {page_number}":
+            target_frame = el
+            break
+
+    # Find the corresponding ocr frame
+    if target_frame is not None:
+        if ocr:
+            id_target_frame = f'{target_frame.get("id")}_ocr'
+
+            for el in excalidraw_file.get("elements", []):
+                if el.get("type") == "frame" and el.get("id") == id_target_frame:
+                    target_frame_ocr = el
+                    break
+
+    return target_frame, target_frame_ocr
+
+
+def add_ps2canvas(
+        pen_stroke, target_frame, page_number, excalidraw_file, series,
         screen_ratio=SCREEN_RATIO):
     """
-    Add a freedraw element (hand-drawn stroke) to a specific page (frame) in the Excalidraw file.
+    Add a freedraw element (hand-drawn stroke) to a specific page (frame) in the Excalidraw file from
+    a pen stroke dict.
 
     Args:
-        color (str): Stroke color (e.g., "#1e1e1e").
-        vector_points (list): A list of points (each a list or tuple of [x, y]) representing the stroke.
         page_number (int): The page number (as set in the frame's "name", e.g., "Page 1").
         excalidraw_file (dict): The Excalidraw file structure (as returned by create_pages).
 
     """
     try:
-        # Find the frame corresponding to the given page number.
-        vector_points = [(int((x[0]-min_c_x)/screen_ratio), int((x[1]-min_c_y)/screen_ratio)) for x in vector_points]
+        # retrieve the color
+        try:
+            color = COLORS[pen_stroke['color']]
+        except Exception as e:
+            print(f'**- Color unknown: {e}')
+            color = "#9d9d9d"
 
-        target_frame = None
-        for el in excalidraw_file.get("elements", []):
-            if el.get("type") == "frame" and el.get("name") == f"Page {page_number}":
-                target_frame = el
-                break
-        if target_frame is None:
-            raise ValueError(f"Frame for Page {page_number} not found.")
+        # Retrieve the pen weight (pen_stroke_width)
+        stroke_weight = pen_stroke['weight']
+
+        if stroke_weight <= 500:
+            pen_stroke_width = 0.3
+        elif stroke_weight <= 1000:
+            pen_stroke_width = 1
+        else:
+            pen_stroke_width = 2
+
+        min_c_x = pen_stroke['min_c_x']
+        min_c_y = pen_stroke['min_c_y']
+
+        # Retrieve the vector_points
+        stroke_vector_points = pen_stroke['vector_points']
+        normalized_points = [pysn.topright_to_topleft(x, series) for x in stroke_vector_points]
+
+        # Find the frame corresponding to the given page number.
+        vector_points = [(int((x[0]-min_c_x)/screen_ratio), int((x[1]-min_c_y)/screen_ratio)) for x in normalized_points]
 
         # Set the drawing's position relative to the frame.
         base_width = target_frame.get("width", 0)
@@ -191,11 +231,11 @@ def add_freedraw_to_page(
         denominator_y = RESOLUTIONS[series][1]
 
         if HORIZONTAL_PAGES:
-            freedraw_x = (int(page_number) - 1)*(PAGE_SPACING + base_width) + min_c_x + base_width * min_c_x / denominator_x
+            freedraw_x = (page_number - 1)*(PAGE_SPACING + base_width) + min_c_x + base_width * min_c_x / denominator_x
             freedraw_y = min_c_y+base_height*min_c_y/denominator_y
         else:
             freedraw_x = min_c_x+base_width*min_c_x/denominator_x
-            freedraw_y = (int(page_number)-1)*(PAGE_SPACING+base_height)+min_c_y+base_height*min_c_y/denominator_y
+            freedraw_y = (page_number-1)*(PAGE_SPACING+base_height)+min_c_y+base_height*min_c_y/denominator_y
 
         # Compute the bounding box of the provided vector points.
         if vector_points:
@@ -251,34 +291,19 @@ def add_freedraw_to_page(
         # Append the new freedraw element to the Excalidraw file.
         excalidraw_file["elements"].append(freedraw_element)
     except Exception as e:
-        print(f'**-add_freedraw_to_page: {e}')
+        print(f'**-add_ps2canvas: {e}')
 
 
-def add_ocr_to_page(
-        page_number, excalidraw_file, word_rect_std, word_text, series, screen_ratio=SCREEN_RATIO):
+def add_text2canvas(target_frame, page_number, excalidraw_file, word_rect_std, word_text, screen_ratio=SCREEN_RATIO):
     """
     Add ocr to an ocr frame pertaining to a page.
 
     """
+
     # Find the frame corresponding to the given page number.
     word_rect_std = [int(x/screen_ratio) for x in word_rect_std]
 
     min_c_x, min_c_y, width, height = word_rect_std
-
-    target_frame = None
-    id_target_frame = ''
-    for el in excalidraw_file.get("elements", []):
-        if el.get("type") == "frame" and el.get("name") == f"Page {page_number}":
-            id_target_frame = f'{el.get("id")}_ocr'
-            break
-    if id_target_frame != '':
-        for el in excalidraw_file.get("elements", []):
-            if el.get("type") == "frame" and el.get("id") == id_target_frame:
-                target_frame = el
-                break
-
-    if target_frame is None:
-        raise ValueError(f"OCR frame for Page {page_number} not found.")
 
     # Set the drawing's position relative to the frame.
     base_width = target_frame.get("width", 0)
@@ -308,7 +333,7 @@ def add_ocr_to_page(
         "roughness": 1,
         "opacity": 100,
         "groupIds": [],
-        "frameId": id_target_frame,
+        "frameId": target_frame.get("id", ""),
         "index": f"a{random.randint(1, 1000)}",  # Arbitrary index for ordering.
         "roundness": None,
         "seed": random.randint(0, 1000000000),
@@ -320,7 +345,7 @@ def add_ocr_to_page(
         "link": None,
         "locked": False,
         "text": word_text,
-        "fontSize": 28,
+        "fontSize": 16,
         "fontFamily": 5,
         "textAlign": "left",
         "verticalAlign": "top",
@@ -356,37 +381,19 @@ def note2ex(note_fn, series):
 
         exca_file, _ = create_pages(series, page_nb, ocr_layer=ocr_file)
 
-        pen_stroke_width = 0.3
         # Parse the dictionary of totalpath objects
 
         for apage, avalue in pen_strokes_dict.items():
 
+            target_frame, target_frame_ocr = page_number2frame(exca_file, apage, ocr=ocr_file)
+
+            page_number = int(apage)
+
             a_list_strokes = avalue['strokes']
 
             for a_stroke in a_list_strokes:
-
-                min_c_x = a_stroke['min_c_x']
-                min_c_y = a_stroke['min_c_y']
-
-                try:
-                    a_stroke_color = COLORS[a_stroke['color']]
-                except Exception as e:
-                    print(f'**- Color unknown: {e}')
-                    a_stroke_color = "#9d9d9d",
-
-                a_stroke_weight = a_stroke['weight']
-                if a_stroke_weight <= 500:
-                    pen_stroke_width = 0.3
-                elif a_stroke_weight <= 1000:
-                    pen_stroke_width = 1
-                else:
-                    pen_stroke_width = 2
-
-                a_stroke_vector_points = a_stroke['vector_points']
-                normalized_points = [
-                    pysn.topright_to_topleft(x, series) for x in a_stroke_vector_points]
-                add_freedraw_to_page(a_stroke_color, normalized_points, apage, exca_file, min_c_x, min_c_y,
-                                     series, pen_stroke_width=pen_stroke_width)
+                add_ps2canvas(
+                    a_stroke, target_frame, page_number, exca_file, series)
 
             if ocr_file:
                 page_ocr = str(int(apage)-1)
@@ -407,7 +414,7 @@ def note2ex(note_fn, series):
                                         word_rect_std = [x*MYSCRIPT_RATIO for x in word_rect]
                                         word_text = a_word['label']
                                         if word_text != '':
-                                            add_ocr_to_page(apage, exca_file, word_rect_std, word_text, series)
+                                            add_text2canvas(target_frame_ocr, page_number, exca_file, word_rect_std, word_text)
 
         output_fn = f'{note_fn[:-5]}.excalidraw'
         pysn.save_json(output_fn, exca_file)
