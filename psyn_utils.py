@@ -132,6 +132,26 @@ def topright_to_topleft(a_reversed_point, series):
     return a_point
 
 
+def topleft_to_topright(a_point, series, unstitch_mode=False, offset_h=0, offset_v=0):
+    """ Screen coordinates conversion Warning: reverses x & y """
+    try:
+        max_horizontal_pixels, max_vertical_pixels, adb_screen_max_x, adb_screen_max_y = series_bounds(series)
+        if unstitch_mode:
+            a_reversed_point = (
+                max(min(
+                    round(adb_screen_max_y - (adb_screen_max_y-(a_point[0]*adb_screen_max_x/max_horizontal_pixels)+OFFSET_T_X) + offset_v), adb_screen_max_y), 0),
+                max(min(
+                    round(a_point[1]*adb_screen_max_x/max_vertical_pixels)-OFFSET_T_Y + offset_h, adb_screen_max_x), 0))
+        else:
+            a_reversed_point = (
+                max(min(
+                    round(a_point[1]*adb_screen_max_y/max_vertical_pixels-OFFSET_T_Y+a_point[1]*offset_v/max_vertical_pixels), adb_screen_max_y), 0),
+                max(min(round(adb_screen_max_x-(a_point[0]*adb_screen_max_x/max_horizontal_pixels)+OFFSET_T_X+a_point[0]*offset_h/max_horizontal_pixels), adb_screen_max_x), 0))
+    except Exception as e:
+        print(f'**-topleft_to_topright:{e}')
+    return a_reversed_point
+
+
 def extract_metadata(source_fn):
     """ Extracts .note or .mark metadata """
     metadata = None

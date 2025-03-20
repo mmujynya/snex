@@ -3,6 +3,9 @@ import uuid
 import time
 import random
 import sys
+import re
+import json
+import os
 
 SCREEN_RATIO = 3
 
@@ -102,7 +105,7 @@ def create_pages(
             "boundElements": [],
             "updated": int(time.time() * 1000),
             "link": None,
-            "locked": False,
+            "locked": True,
             "name": f"Page {i+1}"
 
         }
@@ -134,7 +137,7 @@ def create_pages(
                 "boundElements": [],
                 "updated": int(time.time() * 1000),
                 "link": None,
-                "locked": False,
+                "locked": True,
                 "name": ""}
             elements.append(ocr_frame)
         page_mapping[i + 1] = frame
@@ -217,7 +220,10 @@ def add_ps2canvas(
 
         # Retrieve the vector_points
         stroke_vector_points = pen_stroke['vector_points']
+        # print(f'---min_c_x: {min_c_x} - min_c_y: {min_c_y}')
+        # print(f'---stroke_vector_points: {stroke_vector_points}')
         normalized_points = [pysn.topright_to_topleft(x, series) for x in stroke_vector_points]
+        # print(f'---normalized_points: {normalized_points}')
 
         # Find the frame corresponding to the given page number.
         vector_points = [(int((x[0]-min_c_x)/screen_ratio), int((x[1]-min_c_y)/screen_ratio)) for x in normalized_points]
@@ -331,7 +337,7 @@ def add_text2canvas(target_frame, page_number, excalidraw_file, word_rect_std, w
         "strokeWidth": 0.3,
         "strokeStyle": "solid",
         "roughness": 1,
-        "opacity": 100,
+        "opacity": 0,
         "groupIds": [],
         "frameId": target_frame.get("id", ""),
         "index": f"a{random.randint(1, 1000)}",  # Arbitrary index for ordering.
@@ -426,6 +432,98 @@ def note2ex(note_fn, series):
         print(f'---apage:{apage}')
 
 
+def extract_penstrokes_by_page(excalidraw_filename, series, screen_ratio=SCREEN_RATIO):
+    """
+    Load an Excalidraw file from disk and extract pen stroke data for each page.
+    Each page key maps to a list of tuples: (strokeColor, strokeWidth, vector_points),
+    where vector_points are recovered relative to the frame's coordinate system.
+
+    Args:
+        excalidraw_filename (str): Path to the Excalidraw JSON file.
+        series: Identifier used for resolution lookup (RESOLUTIONS[series] should be available).
+        screen_ratio (float): The screen ratio used during the forward transformation.
+
+    Returns:
+        dict: Keys are page numbers (from frame names like "Page 1"), and values are lists of tuples.
+              Each tuple contains (strokeColor, strokeWidth, vector_points).
+    """
+    # Load the Excalidraw file.
+    with open(excalidraw_filename, 'r') as f:
+        excalidraw_file = json.load(f)
+
+    # Build a mapping from frame id to frame properties (including x, y positions).
+    frame_mapping = {}
+    for elem in excalidraw_file.get("elements", []):
+        if elem.get("type") == "frame":
+            name = elem.get("name", "")
+            match = re.search(r'\bPage\s+(\d+)\b', name)
+            if match:
+                page_number = int(match.group(1))
+                frame_mapping[elem.get("id")] = {
+                    "page_number": page_number,
+                    "width": elem.get("width", 0),
+                    "height": elem.get("height", 0),
+                    "x": elem.get("x", 0),  # Record the frame's x position.
+                    "y": elem.get("y", 0),  # Record the frame's y position.
+                }
+
+    # Prepare dictionary to collect pen strokes by page.
+    page_penstrokes = {}
+
+    # Process freedraw elements.
+    for elem in excalidraw_file.get("elements", []):
+        if elem.get("type") != "freedraw":
+            continue
+
+        frame_id = elem.get("frameId")
+        if frame_id not in frame_mapping:
+            # Freedraw element not attached to a recognized frame.
+            continue
+
+        # Retrieve frame parameters.
+        frame_props = frame_mapping[frame_id]
+        page_number = frame_props["page_number"]
+        base_width = frame_props["width"]
+        base_height = frame_props["height"]
+        frame_x = frame_props["x"]
+        frame_y = frame_props["y"]
+        denominator_x, denominator_y = RESOLUTIONS[series]
+
+        # First, compute the freedraw element's position relative to the frame.
+        # This step subtracts out the frame's absolute x,y position.
+        relative_x = elem["x"] - frame_x
+        relative_y = elem["y"] - frame_y
+
+        # Invert the frame positioning to recover min_c_x and min_c_y.
+        if HORIZONTAL_PAGES:
+            # For horizontal pages, account for the page offset in x.
+            min_c_x = (relative_x - (page_number - 1) * (PAGE_SPACING + base_width)) / (1 + base_width / denominator_x)
+            min_c_y = relative_y / (1 + base_height / denominator_y)
+        else:
+            min_c_x = relative_x / (1 + base_width / denominator_x)
+            min_c_y = (relative_y - (page_number - 1) * (PAGE_SPACING + base_height)) / (1 + base_height / denominator_y)
+
+        # Invert the vector point transformation.
+        # The forward transformation roughly did:
+        #   temp_point = int((normalized - min_c) / screen_ratio)
+        #   stored_point = temp_point - min_c
+        # Here we add back min_c and reverse the scaling.
+        recovered_points = []
+        for pt in elem.get("points", []):
+            temp_x = pt[0] + min_c_x
+            temp_y = pt[1] + min_c_y
+            normalized_x = temp_x * screen_ratio + min_c_x
+            normalized_y = temp_y * screen_ratio + min_c_y
+            denormalized_point = pysn.topleft_to_topright((normalized_x, normalized_y), series)
+            recovered_points.append(denormalized_point)
+
+        # Build the tuple (strokeColor, strokeWidth, vector_points) for this pen stroke.
+        stroke_tuple = (elem.get("strokeColor"), elem.get("strokeWidth"), recovered_points)
+        page_penstrokes.setdefault(page_number, []).append(stroke_tuple)
+
+    return page_penstrokes
+
+
 if __name__ == "__main__":
     if len(sys.argv) != 3:
         print("Usage: python snex.py <filename> <series>")
@@ -434,6 +532,14 @@ if __name__ == "__main__":
     print(f'SNEX Version {VERSION}')
     print('----------------')
     filename = sys.argv[1]
+    # Get the file extension
+    basename, file_extension = os.path.splitext(filename)
     series = sys.argv[2]
 
-    note2ex(filename, series)
+    if file_extension.lower() == '.note':
+        note2ex(filename, series)
+    elif file_extension.lower() == '.excalidraw':
+        adict = extract_penstrokes_by_page(filename, series)
+        output_fn = f'{basename}.json'
+        pysn.save_json(output_fn, adict)
+        print(f'Generated file: {output_fn}')

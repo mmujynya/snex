@@ -30,14 +30,14 @@ Run snex.py. The script takes 2 parameters:
 
 For example:
    ```bash
-   python snex.py 'test/testocr.note' 'N5'
+   python snex.py 'test/stroller.note' 'N5'
    ```
 The output would show:
    ```bash
 SNEX Version 1.0
 ----------------
-Processing file: test/testocr.note with series: N5
-Generated file: test/testocr.excalidraw
+Processing file: test/stroller.note with series: N5
+Generated file: test/stroller.excalidraw
    ```
 
 You can then head to [Excalidraw website](https://excalidraw.com/) look at the hamburger menu button, use 'open" menu then browse to load the generated file with the extension '.excalidraw'
