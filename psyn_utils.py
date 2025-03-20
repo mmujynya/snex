@@ -16,6 +16,25 @@ ADB_SCREEN_MAX_Y_N5 = 21632  # For N5 series like Manta
 ADB_SCREEN_OFFSET = 5
 
 
+def contains_hex_sequence(binary_data: bytes, hex_seq: str) -> bool:
+    """
+    Check if the given hex sequence exists in binary_data.
+
+    Parameters:
+        binary_data (bytes): The binary data to search.
+        hex_seq (str): The hex sequence (e.g., "deadbeef").
+
+    Returns:
+        bool: True if the sequence exists, False otherwise.
+    """
+    pattern = bytes.fromhex(hex_seq)
+    return pattern in binary_data
+
+
+def is_n6_file(binary_data):
+    return contains_hex_sequence(binary_data, '7C0500005007')
+
+
 def decimal_ieee754_from_binary(binary_data, position, offset=0, num_bytes=4):
     """ Extract 4 bytes starting from the specified position """
     try:
@@ -75,6 +94,7 @@ def read_endian_int_at_position(data, position, num_bytes=4, endian='little'):
 
         # Read the specified number of bytes from the given position
         byte_sequence = data[position:position + num_bytes]
+        # print(byte_sequence.hex().upper())
 
         # Convert the byte sequence from little-endian to an integer
         integer_value = int.from_bytes(byte_sequence, byteorder=endian)
@@ -272,7 +292,16 @@ def get_pen_strokes_dict(note_fn, search_keyword=None):
             with open(note_fn, 'rb') as a_note_file:
                 note_file_binaries = a_note_file.read()
 
+            if is_n6_file(note_file_binaries):
+                print('N6 file type')
+                detected_series = 'N6'
+            else:
+                print('N5 file type')
+                detected_series = 'N5'
+
             unique_used_list = []
+
+            last_good_address = 0
 
             for a_page in pen_strokes_address_dict.keys():
                 page_pen_strokes_dict = pen_strokes_address_dict[a_page]
@@ -290,9 +319,12 @@ def get_pen_strokes_dict(note_fn, search_keyword=None):
                     for pen_stroke_index in range(page_totalpath_strokes_nb):
 
                         _, pen_stroke_size = read_endian_int_at_position(note_file_binaries, a_position)
+
                         _, pen_type = read_endian_int_at_position(note_file_binaries, a_position + 4, num_bytes=1)
                         # We are skipping the below because it pertains to headings and links (not pen strokes)
                         if pen_type == 0:
+                            print(f'**- skipped at address: {a_position}')
+                            a_position += pen_stroke_size + 4
                             continue
                         _, pen_color = read_endian_int_at_position(note_file_binaries, a_position + 8, num_bytes=1)
                         _, pen_weight = read_endian_int_at_position(note_file_binaries, a_position + 12, num_bytes=2)
@@ -303,6 +335,10 @@ def get_pen_strokes_dict(note_fn, search_keyword=None):
                         _, max_contours_x = read_endian_int_at_position(note_file_binaries, a_position + 120)
                         _, max_contours_y = read_endian_int_at_position(note_file_binaries, a_position + 124)
                         _, vector_size = read_endian_int_at_position(note_file_binaries, a_position + 216)
+                        if vector_size == 0:
+                            print(f'**- Zero size vector skipped at address: {a_position}')
+                            a_position += pen_stroke_size + 4
+                            continue
 
                         vector_points = []
                         for index_point in range(vector_size):
@@ -349,7 +385,13 @@ def get_pen_strokes_dict(note_fn, search_keyword=None):
                         # contour_problem = False
                         # print(f'----contours_number: {contours_number}')
                         if contours_number > 1000:
-                            print(f'**- TOO HIGH contours_number: {contours_number} for page: {a_page} - Pen stroke #: {pen_stroke_index}')
+                            print(f'**- TOO HIGH contours_number: {contours_number} for page: {a_page} - Pen stroke #: {pen_stroke_index} pen_type: {pen_type}')
+                            print(f'> page_totalpath_address: {page_totalpath_address}')
+                            print(f'> last good trail address: {last_good_address}')
+                            print(f'> Failing Trail Address: {a_position}')
+                            print(f'> Failing contour Address: {a_position + 290 + sequence_length + vector_size * 15}')
+                            print(f'  Pen_stroke_size:{pen_stroke_size} at: {a_position}')
+                            print(f' Vector_size:{vector_size} at: {a_position + 216}')
                             return None, None, None
 
                         for contour_index in range(contours_number):
@@ -387,13 +429,14 @@ def get_pen_strokes_dict(note_fn, search_keyword=None):
                             'vector_pressure': pressure_points, 'vector_unique': unique_used_list, 'vector_one': [1]*vector_size,
                             'contours': contours_dict, 'r_bytes': remaining_bytes.hex().upper()})
 
+                        last_good_address = a_position
                         a_position += pen_stroke_size + 4
                     page_pen_strokes_dict['strokes'] = pen_strokes_list
                 else:
                     page_pen_strokes_dict['strokes'] = []
 
-        return pen_strokes_address_dict, file_type, meta_data
+        return pen_strokes_address_dict, file_type, meta_data, detected_series
     except Exception as e:
         print()
         print(f'*** get_pen_strokes_dict: {e}')
-        return None, None, None
+        return None, None, None, ''

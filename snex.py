@@ -28,7 +28,7 @@ COLORS = {
     255: "#ffffff"
 }
 MYSCRIPT_RATIO = 12
-VERSION = 1.01
+VERSION = 1.02
 
 
 def generate_excalidraw_id(use_uuid=True, length=20):
@@ -106,7 +106,8 @@ def create_pages(
             "updated": int(time.time() * 1000),
             "link": None,
             "locked": True,
-            "name": f"Page {i+1}"
+            "name": f"Page {i+1}",
+            "pysn": series
 
         }
         elements.append(frame)
@@ -138,7 +139,8 @@ def create_pages(
                 "updated": int(time.time() * 1000),
                 "link": None,
                 "locked": True,
-                "name": ""}
+                "name": "",
+                "pysn": series}
             elements.append(ocr_frame)
         page_mapping[i + 1] = frame
 
@@ -365,7 +367,7 @@ def add_text2canvas(target_frame, page_number, excalidraw_file, word_rect_std, w
     excalidraw_file["elements"].append(text_element)
 
 
-def note2ex(note_fn, series):
+def note2ex(note_fn):
     """
     Input:
         - filename of a Supernote notebook
@@ -375,9 +377,9 @@ def note2ex(note_fn, series):
         - An Excalidraw file
     """
     try:
-        print(f'Processing file: {note_fn} with series: {series}')
+        print(f'Processing file: {note_fn}')
 
-        pen_strokes_dict, _, meta_data = pysn.get_pen_strokes_dict(note_fn)
+        pen_strokes_dict, _, meta_data, series = pysn.get_pen_strokes_dict(note_fn)
 
         _, ocr_pages_dict = pysn.titles_and_text_from_notes(meta_data, note_fn)
 
@@ -428,11 +430,9 @@ def note2ex(note_fn, series):
     except Exception as e:
         print(f'*** note2ex: {e}')
         print(ocr_file)
-        print(page_nb)
-        print(f'---apage:{apage}')
 
 
-def extract_penstrokes_by_page(excalidraw_filename, series, screen_ratio=SCREEN_RATIO):
+def extract_penstrokes_by_page(excalidraw_filename, screen_ratio=SCREEN_RATIO):
     """
     Load an Excalidraw file from disk and extract pen stroke data for each page.
     Each page key maps to a list of tuples: (strokeColor, strokeWidth, vector_points),
@@ -453,6 +453,7 @@ def extract_penstrokes_by_page(excalidraw_filename, series, screen_ratio=SCREEN_
 
     # Build a mapping from frame id to frame properties (including x, y positions).
     frame_mapping = {}
+    series = excalidraw_file.get("pysn", "N5")
     for elem in excalidraw_file.get("elements", []):
         if elem.get("type") == "frame":
             name = elem.get("name", "")
@@ -525,21 +526,20 @@ def extract_penstrokes_by_page(excalidraw_filename, series, screen_ratio=SCREEN_
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Usage: python snex.py <filename> <series>")
+    if len(sys.argv) != 2:
+        print("Usage: python snex.py <filename>")
         sys.exit(1)
     print()
     print(f'SNEX Version {VERSION}')
-    print('----------------')
+    print('-----------------')
     filename = sys.argv[1]
     # Get the file extension
     basename, file_extension = os.path.splitext(filename)
-    series = sys.argv[2]
 
     if file_extension.lower() == '.note':
-        note2ex(filename, series)
+        note2ex(filename)
     elif file_extension.lower() == '.excalidraw':
-        adict = extract_penstrokes_by_page(filename, series)
+        adict = extract_penstrokes_by_page(filename)
         output_fn = f'{basename}.json'
         pysn.save_json(output_fn, adict)
         print(f'Generated file: {output_fn}')

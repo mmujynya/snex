@@ -3,6 +3,13 @@ Supernote - Excalidraw tools
 Exports Supernote notebooks to [Excalidraw](https://excalidraw.com/) format
 See [YouTube video](https://youtu.be/p1sAisn_xd4?si=bEZ4xpuXrVyZGTjm)
 
+
+## CHANGE LOG:
+- **Version 1.02**: 
+  - The series (N5 for Manta or N6 for other) is inferred from the file content
+  - Frames are locked by default
+
+
 ## NOTICE & Credit: 
 
 This code uses and alters [Github supernote-tool](https://github.com/jya-dev/supernote-tool/tree/master)
@@ -24,9 +31,9 @@ Python 3.12.2 (Version 3.13.x or later may not work)
    ```
 
 ## USAGE
-Run snex.py. The script takes 2 parameters: 
+Run snex.py. The script takes 1 parameter: 
 - the name of the source Supernote notebook
-- the series ("N5" for Manta or "N6" for Nomad) of the tablet that created the notebook
+
 
 For example:
    ```bash
