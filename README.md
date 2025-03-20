@@ -37,13 +37,13 @@ Run snex.py. The script takes 1 parameter:
 
 For example:
    ```bash
-   python snex.py 'test/stroller.note' 'N5'
+   python snex.py 'test/stroller.note'
    ```
 The output would show:
    ```bash
-SNEX Version 1.0
-----------------
-Processing file: test/stroller.note with series: N5
+SNEX Version 1.02
+-----------------
+Processing file: test/stroller.note
 Generated file: test/stroller.excalidraw
    ```
 
