@@ -5,7 +5,10 @@ See [YouTube video](https://youtu.be/p1sAisn_xd4?si=bEZ4xpuXrVyZGTjm)
 
 
 ## CHANGE LOG:
-- **Version 1.02**: 
+- **Version 1.05**:
+  - Importing from Excalidraw to Supernote
+
+- Version 1.02: 
   - The series (N5 for Manta or N6 for other) is inferred from the file content
   - Frames are locked by default
 
@@ -31,21 +34,24 @@ Python 3.12.2 (Version 3.13.x or later may not work)
    ```
 
 ## USAGE
-Run snex.py. The script takes 1 parameter: 
-- the name of the source Supernote notebook
+- Create an Excalidraw scene with P blank pages for a given series (‘N5’ for Manta, ‘N6’ for other models)
+  - This is needed because Excalidraw has an infinite canvas, while the Supernote format relies on pages of a given dimension. We simulate the SN pages by creating frame objects.
+  - Command: python snex.py ‘<series> P’
+  - For example: Python snex.py ‘N5 4’ will create a scene compatible fir Manta with 4 pages in the root folder
+
+- Export a notebook to Excalidraw
+  - Command: Python snex.py <filename with .note extension>
+  - For example: python snex.py 'test/alice.note' will create 'alice.note.excalidraw' in the 'test' subfolder. In Excalidraw, you can load such file from the menu-> open buttons
+
+  Head to [Excalidraw website](https://excalidraw.com/) look at the hamburger menu button, use 'open" menu then browse to load the generated file with the extension '.excalidraw'
+
+- Import an Excalidraw file to Supernote
+  - Command: python snex.py <filename with .excalidraw extension >
 
 
-For example:
-   ```bash
-   python snex.py 'test/stroller.note'
-   ```
-The output would show:
-   ```bash
-SNEX Version 1.02
------------------
-Processing file: test/stroller.note
-Generated file: test/stroller.excalidraw
-   ```
 
-You can then head to [Excalidraw website](https://excalidraw.com/) look at the hamburger menu button, use 'open" menu then browse to load the generated file with the extension '.excalidraw'
+# ISSUES
+- When converting text to notes, pay attention to not touching the limits of the page. In particular, stick with the "barlow" font family, because it is narrow enough.
+- Exporting dotted shapes from Excalidraw to SN is okay, but when reuploading, it seems that some or all of the points vanish
+- No links, no headers, no images
 
