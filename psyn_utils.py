@@ -234,7 +234,7 @@ def contains_hex_sequence(binary_data: bytes, hex_seq: str) -> bool:
 
 
 def is_n6_file(binary_data):
-    return contains_hex_sequence(binary_data, '7C0500005007')
+    return contains_hex_sequence(binary_data, '3C4150504C595F45515549504D454E543A4E36')
 
 
 def decimal_ieee754_from_binary(binary_data, position, offset=0, num_bytes=4):
