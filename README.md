@@ -36,14 +36,14 @@ Python 3.12.2 (Version 3.13.x or later may not work)
 ## USAGE
 - Create an Excalidraw scene with P blank pages for a given series (‘N5’ for Manta, ‘N6’ for other models)
   - This is needed because Excalidraw has an infinite canvas, while the Supernote format relies on pages of a given dimension. We simulate the SN pages by creating frame objects.
-  - Command: python snex.py ‘<series> P’
-  - For example: Python snex.py ‘N5 4’ will create a scene compatible fir Manta with 4 pages in the root folder
+  - Command: python snex.py "<series> P"
+  - For example: Python snex.py ‘N5 4’ will create a scene compatible for Manta with 4 pages in the root folder
 
 - Export a notebook to Excalidraw
   - Command: Python snex.py <filename with .note extension>
   - For example: python snex.py 'test/alice.note' will create 'alice.note.excalidraw' in the 'test' subfolder. In Excalidraw, you can load such file from the menu-> open buttons
 
-  Head to [Excalidraw website](https://excalidraw.com/) look at the hamburger menu button, use 'open" menu then browse to load the generated file with the extension '.excalidraw'
+  Head to [Excalidraw website](https://excalidraw.com/) look at the hamburger menu button, use "open" menu then browse to load the generated file with the extension ".excalidraw"
 
 - Import an Excalidraw file to Supernote
   - Command: python snex.py <filename with .excalidraw extension >
@@ -52,6 +52,6 @@ Python 3.12.2 (Version 3.13.x or later may not work)
 
 # ISSUES
 - When converting text to notes, pay attention to not touching the limits of the page. In particular, stick with the "barlow" font family, because it is narrow enough.
-- Exporting dotted shapes from Excalidraw to SN is okay, but when reuploading, it seems that some or all of the points vanish
+- Lower resolution of the Excalidraw canvas may result into small penstrokes details being lost when eporting a ".note" file. A consequence of that bug is that "dotted" shapes re-uploaded from the Supernote to Excalidraw may disappear (too small fragments).
 - No links, no headers, no images
 
