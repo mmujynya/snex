@@ -36,7 +36,7 @@ Python 3.12.2 (Version 3.13.x or later may not work)
 ## USAGE
 - Create an Excalidraw scene with P blank pages for a given series (‘N5’ for Manta, ‘N6’ for other models)
   - This is needed because Excalidraw has an infinite canvas, while the Supernote format relies on pages of a given dimension. We simulate the SN pages by creating frame objects.
-  - Command: python snex.py "<series> P"
+  - Command: python snex.py "series P"
   - For example: Python snex.py ‘N5 4’ will create a scene compatible for Manta with 4 pages in the root folder
 
 - Export a notebook to Excalidraw
