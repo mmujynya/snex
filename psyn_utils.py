@@ -1587,7 +1587,7 @@ def sn_bytes_page_recap(
                     # style_rle_address = a_page_templates_dict['address']
                     # a_json += f'<STYLE_{style_name}:{style_rle_address}>'
                     style_rle_address = a_page_templates_dict['address']
-                    a_json += f'<STYLE_{style_name}:{style_rle_address}>'                    
+                    a_json += f'<STYLE_{style_name}:{style_rle_address}>'
 
             if apply_equipment == 'N5':
                 if 'style_white_a5x2' not in added_styles_list:
@@ -2333,12 +2333,6 @@ def text_to_pen_strokes_nf(
 
                             page_number += 1
 
-                        else:
-                            pass
-                            # print(f'----list_ps was empty for word: {current_word} ')
-                            # print(f'------len(current_word_ps): {len(current_word_ps)}')
-                            # print(f'-------page_number: {page_number}')
-
                         pos_x = starting_pos_x
                         pos_y = starting_pos_y
                         list_ps = []
@@ -2583,19 +2577,6 @@ def psdict_to_note(ps_dict, titles_dict, output_fn, templates_dict={}, starting_
 
         current_bytes = first_bytes_before_image
 
-        # Adding the template base64 data (not the RLE image) to the binary and 
-        # storing the address in the templates-dict
-        # # # print(f'------templates_dict keys: {templates_dict.keys()}')
-        # # # for a_page in templates_dict:
-        # # #     a_page_dict = templates_dict[a_page]
-        # # #     an_item_dict = a_page_dict['pdfstylelist']
-        # # #     an_item_b64 = an_item_dict['encoded']
-        # # #     an_item_b64_len = len(an_item_b64)
-        # # #     an_item_b64_len_bytes = int_to_little_endian_bytes(an_item_b64_len)
-        # # #     an_item_dict['address'] = len(current_bytes)
-        # # #     current_bytes += an_item_b64_len_bytes + an_item_b64
-        # # # print(f'------templates_dict keys[1][pdfstylelist]: {templates_dict['1']['pdfstylelist'].keys()}')
-
         # Record the address of the placeholder (do we really need this if we already have the ephemeral images dict?)
         placeholder_image_bloc_address = len(current_bytes)
         # # Add the placeholder data to the binary
@@ -2608,11 +2589,9 @@ def psdict_to_note(ps_dict, titles_dict, output_fn, templates_dict={}, starting_
             a_page_dict['address'] = rle_image_block_address
             current_bytes += rle_image_block
 
-
-        blank_image_bloc_address = len(current_bytes)
         current_bytes += blank_image_bloc
 
-        # Adding ephemeral images to the binary and 
+        # Adding ephemeral images to the binary and
         # storing addresses
         main_dict = {}
         for ild_p, ild_v in image_layer_dict.items():
@@ -2635,36 +2614,9 @@ def psdict_to_note(ps_dict, titles_dict, output_fn, templates_dict={}, starting_
             rle_image_block_address = a_page_dict['address']
             a_page_dict['layer_address'] = len(current_bytes)
             img_background_layer = sn_bytes_layer_json(rle_image_block_address, name='BGLAYER')
-            current_bytes += img_background_layer  
-
-
-        # # # for a_page in templates_dict:
-
-        # # #     a_page_dict = templates_dict[a_page]
-
-        # # #     an_item_dict = a_page_dict['pdfstylelist']
-        # # #     an_item_b64 = an_item_dict['encoded']
-        # # #     an_item_b64_len = len(an_item_b64)
-        # # #     an_item_b64_len_bytes = int_to_little_endian_bytes(an_item_b64_len)
-        # # #     an_item_dict['address'] = len(current_bytes)
-        # # #     current_bytes += an_item_b64_len_bytes + an_item_b64   
-
-
-
-
-
-        background_layer_address = len(current_bytes)
-
-
-
-        # MMB 250408 - removing below
-        # # # background_layer = sn_bytes_layer_json(placeholder_image_bloc_address, name='BGLAYER')
-        # # # current_bytes += background_layer
-
+            current_bytes += img_background_layer
 
         current_bytes, titles_recap = build_titles_image_n_details(titles_dict, current_bytes)
-
-        # print(f'----titles_dict:{titles_dict}')
 
         # Build the page links, if applicable
         title_links_recap = ''
@@ -2717,59 +2669,12 @@ def psdict_to_note(ps_dict, titles_dict, output_fn, templates_dict={}, starting_
                         a_page_main_layer_address, 0, a_page_total_path)
             else:
                 page_bytes = sn_bytes_page(
-                    a_page_main_layer_address, 0, a_page_total_path)                    
+                    a_page_main_layer_address, 0, a_page_total_path)
             a_page_ref_dict['pg_address'] = len(current_bytes)
             current_bytes += page_bytes
 
-
-        # # # # Parsing the pages and add page information for each page
-        # # # for a_page_nb in totalpath_address_dict:
-        # # #     a_page_ref_dict = totalpath_address_dict[a_page_nb]
-        # # #     a_page_total_path = a_page_ref_dict['tp_address']
-        # # #     a_page_ref_dict['pg_address'] = len(current_bytes)
-
-        # # #     main_layer_address = main_dict[a_page_nb]
-
-        # # #     page_bytes = sn_bytes_page(main_layer_address, background_layer_address, a_page_total_path)
-        # # #     current_bytes += page_bytes
-
-
-        # # # for a_page_nb in templates_dict:
-        # # #     image_dict = templates_dict[a_page_nb]
-        # # #     pil_image_encoded = image_dict["rle_image"]
-        # # #     if pil_image_encoded is not None:
-
-        # # #         pil_image_encoded_len = len(pil_image_encoded)
-        # # #         pil_image_encoded_len_bytes = int_to_little_endian_bytes(pil_image_encoded_len)
-        # # #         a_t_i_block = pil_image_encoded_len_bytes + pil_image_encoded
-        # # #         a_t_i_block_address = len(current_bytes)
-        # # #         current_bytes += a_t_i_block
-        # # #         ati_layer = sn_bytes_layer_json(a_t_i_block_address, name='BGLAYER')
-        # # #         current_bytes += ati_layer
-        # # #         image_dict['address'] = a_t_i_block_address
-
-        # # #         if a_page_nb in totalpath_bytes:
-        # # #             atad = totalpath_address_dict[a_page_nb]
-        # # #             # Store location of the background layer
-        # # #             background_layer_address = len(current_bytes)
-        # # #             atad['background_layer_address'] = background_layer_address
-        # # #             background_layer = sn_bytes_layer_json(a_t_i_block_address, name='BGLAYER')
-        # # #             current_bytes += background_layer
-
-        # # # # Parsing the pages and add totalpath bytes for each page
-
-        # # # for a_page_nb, page_totalpath_bytes in totalpath_bytes.items():
-        # # #     atad = totalpath_address_dict[a_page_nb]
-        # # #     totalpath_size = len(page_totalpath_bytes)
-        # # #     totalpath_size_bytes = int_to_little_endian_bytes(totalpath_size)
-        # # #     # Add location of Mainlayer and totalpath to dictionary
-        # # #     atad['tp_address'] = len(current_bytes)
-        # # #     # Update binary with totalpath
-        # # #     current_bytes += totalpath_size_bytes + page_totalpath_bytes
-
-
         page_recap_location = len(current_bytes)
-    
+
         recap_pages = sn_bytes_page_recap(
             page_recap_location, totalpath_address_dict, placeholder_image_bloc_address,
             apply_equipment=series, templates_dict=templates_dict, titles_recap=titles_recap)
