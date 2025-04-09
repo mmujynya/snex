@@ -12,7 +12,9 @@ from intervaltree import IntervalTree
 import re
 from shapely.geometry import LineString, MultiLineString
 import random
+import hashlib
 
+USER_SETTINGS_FN = 'user_settings.json'
 UNSTITCH = False
 DEFAULT_PEN = 10  # 10 is Needle-Point
 DEFAULT_PEN_SIZE = "0.3"
@@ -38,6 +40,7 @@ ADB_SCREEN_MAX_Y_N5 = 21632  # For N5 series like Manta
 ADB_SCREEN_OFFSET = 5
 CONTOUR_RESOLUTION = 2
 NOTEBOOK_DEVICE = 'N5'
+PAGES = 3
 FONTS_NARROWING_AFTER = {'F': 0.5, 'f': 0.5, 'i': 0.5, 'I': 0.5, 'l': 0.5}
 FONTS_NARROWING_BEFORE = {'j': 0.5}
 FONT_NAME = "barlow"
@@ -128,6 +131,7 @@ NEEDLE_POINT_SIZES = {
 MARGIN_LEFT_SIZE = 0
 BLANK_TEMPLATE_PICTURE2 = os.path.join(
     CONFIG, 'blankmanta.png')
+FILE_NAME = 'test/input/demo.excalidraw'
 SPECIAL_LENGTH = 0x4000             # (*)
 SPECIAL_LENGTH_FOR_BLANK = 0x400    # (*)
 SPECIAL_LENGTH_MARKER = 0xff        # (*)
@@ -194,6 +198,194 @@ FONTS_FAMILY_MAP = {
     5: "segoe",
     8: "calibri"
 }
+XC_SCREEN_RATIO = 1
+XC_SHAPE_DENSITY = 30  # Higher values will increase a bit filesize, but helps if going back and forth
+# if a canvas has more than the threshold, it likely include image pen strokes
+# in which case we probably want to have the thinnest pen to keep details (see use of CROWD_THRESHOLD in code)
+XC_CROWD_THRESHOLD = 1000
+XC_ROUND_COORDINATES = True  # Rounds coordinates, may save some space because we also eliminate repetitive points
+XC_DASH_LENGTH = 20
+XC_DASH_GAP_LENGTH = 15
+XC_DOT_LENGTH = 5
+XC_DOT_GAP_LENGTH = 15
+
+XC_PAGE_SPACING = 50
+XC_HORIZONTAL_PAGES = False  # If True, the pages will be displayed horizontally
+XC_RESOLUTIONS = {
+        "N6": (1404, 1872),
+        "N5": (1920, 2560)
+    }
+
+XC_INITIAL_X = 0
+XC_INITIAL_Y = 0
+XC_COLORS = {
+    0: "#1e1e1e",
+    254: "#ffffff",
+    255: "#ffffff",
+    157: "#e03131",
+    158: "#e03131",
+    201: "#1971c2",
+    202: "#1971c2"
+}
+XC_COLORS_O = {
+    "#1e1e1e": 0,
+    "#f08c00": 157,
+    "#e03131": 157,
+    "#1971c2": 201,
+    "#2f9e44": 201,
+    "#00000000": 0
+}
+XC_MYSCRIPT_RATIO = 12
+
+
+XC_MAX_UINT32 = 2**32 - 1  # Maximum value for unsigned 32-bit integer (4,294,967,295)
+XC_VERSION_MAX = 1000
+XC_FONT_FAMILY = {
+    5: "excalifont/caveat",
+    6: "nunito/barlow",
+    7: "lilita/segoe",
+    8: "comic/segoe"}
+
+# Dictionary of global variables exposed to the CLI: option long-name, short-name, description, type and name of global variable
+SETTINGS_DESC_DICT = {
+    'filename': {
+        'short': 'file',
+        'description': 'Filename to be processed: either a ".note" or a ".excalidraw" file',
+        'type': str,
+        'var': 'FILE_NAME',
+    },
+    'pages': {
+        'short': 'pages',
+        'description': 'Default number of pages to be created with the --blank option',
+        'type': int,
+        'var': 'PAGES'
+    },
+    'debug': {
+        'short': 'debug',
+        'description': 'Enable (prefix -no- to disable) debug. When enabled, more info print on screen and temp folder is not deleted',
+        'type': bool,
+        'var': 'DEBUG_MODE'},
+    'xc_screen_ratio': {
+        'short': 'xcsr',
+        'description': 'A higher value means that the Excalidraw coordinates are shrunk. So 1 is higher definition than 2',
+        'type': int,
+        'var': 'XC_SCREEN_RATIO',
+        'choices': [1, 2, 3]
+    },
+    'xc_crowd_ratio': {
+        'short': 'xccr',
+        'description': 'If the number of elements is above this, the script infer we have an image',
+        'type': int,
+        'var': 'XC_CROWD_THRESHOLD'
+    },
+    'xc_round_coord': {
+        'short': 'xcrc',
+        'description': 'Rounds coordinates, may save some space because we also eliminate repetitive points',
+        'type': bool,
+        'var': 'XC_ROUND_COORDINATES'
+    },
+    'device': {
+        'short': 'device',
+        'description': 'Notebook Series: N5 for Manta, N6 for others',
+        'type': str,
+        'var': 'NOTEBOOK_DEVICE',
+        'choices': ['N5', 'N6']},
+    'language': {
+        'short': 'language',
+        'description': 'Language to be used by MyScript',
+        'type': str,
+        'var': 'FILE_RECOGN_LANGUAGE'},
+    'fontr': {
+        'short': 'fontr',
+        'description': 'The ratio to apply to the real font-size. for example: 0.7 means 70 percent of the real size',
+        'type': float,
+        'var': 'SCALE_RATIO_TEXT2NOTE'},
+    'font_name': {
+        'short': 'font_name',
+        'description': 'The name of the fonts set used for text-to-notes',
+        'type': str,
+        'var': 'FONT_NAME',
+        'choices': ['barlow', 'segoe', 'calibri', 'caveat']},
+    'lmargin': {
+        'short': 'lmargin',
+        'description': 'The left margin to apply when converting a text to note',
+        'type': float,
+        'var': 'MARGIN_LEFT_SIZE'}
+}
+
+ALLOWED_GLOBAL = {settings['var'] for settings in SETTINGS_DESC_DICT.values()}
+
+
+def binary_md5(binary_file, data_start=0, data_length=None, max_hash_length=None):
+    """ Computes md5 hash of a block of bytes and returns it, postfixed
+        with the length of block considered for the hash computation.
+
+        Supernote uses this logic to compute a hash of the RLE encoded bytes of
+        templates. We do not know how max_hash_length is picked so we choose
+        randomly in an empirical range.
+
+        Input Parameters:
+            - binary_file: binary data of a file containing a block to hash
+            - data_start: start location of the block of data to hash
+            - data_length: length of the block of data to hash
+            - max_hash_length: maximum length to consider for hashing purpose
+
+        Output:
+            - A 32 characters long string representing the hash, postfixed by
+              underscore and the max_hash_length"""
+
+    try:
+        if data_length is None:
+            data_length = len(binary_file)
+        # Get the block to encode
+        data_end = data_start + data_length
+        data_full = binary_file[data_start: data_end]
+
+        # Picking a random max_length
+        if max_hash_length is None:
+            # max_hash_length = random.randint(101800, 105000)
+            max_hash_length = 103639
+
+        max_hash_length = min(len(data_full), max_hash_length)
+        data_to_hash = data_full[:max_hash_length]
+
+        # Initialize hash
+        md5 = hashlib.md5()
+        md5.update(data_to_hash)
+        return f'{md5.hexdigest()}_{max_hash_length}'
+    except Exception as e:
+        print(f'*** binary_md5: {e}')
+        return None
+
+
+def save_user_settings(user_settings_dict):
+    """ Saves user settings in a json"""
+    try:
+        user_settings_fn = os.path.join(CONFIG, USER_SETTINGS_FN)
+        save_json(user_settings_fn, user_settings_dict)
+    except Exception as e:
+        print()
+        print(f'*** Error in save_user_settings: {e}')
+
+
+def load_user_settings(path=os.path.join(CONFIG, USER_SETTINGS_FN)):
+    """ Reads user settings and set the value of the global variable accordingly
+        TODO: Warn users not to accept someone's else user_settings without checking
+         that it is safe, because malignant code could be hidden in it """
+    try:
+        user_settings_dict = {}
+        if os.path.exists(path):
+            user_settings_dict = read_json(path)
+            # Parse the keys
+            for key, value in user_settings_dict.items():
+                if key in ALLOWED_GLOBAL and isinstance(value, (str, list, dict, int, float, bool, type(None))):
+                    eval(f"{key} = {repr(value)}")
+
+    except Exception as e:
+        print()
+        print(f'Cannot load load_user_settings: {e}')
+        return {}
+    return user_settings_dict
 
 
 def list_to_tree(interval_list):
@@ -234,7 +426,7 @@ def contains_hex_sequence(binary_data: bytes, hex_seq: str) -> bool:
 
 
 def is_n6_file(binary_data):
-    return contains_hex_sequence(binary_data, '7C0500005007')
+    return contains_hex_sequence(binary_data, '3C4150504C595F45515549504D454E543A4E36')
 
 
 def decimal_ieee754_from_binary(binary_data, position, offset=0, num_bytes=4):
@@ -505,10 +697,10 @@ def get_pen_strokes_dict(note_fn, search_keyword=None):
                 note_file_binaries = a_note_file.read()
 
             if is_n6_file(note_file_binaries):
-                print('N6 file type')
+                print('   > N6 file type')
                 detected_series = 'N6'
             else:
-                print('N5 file type')
+                print('   > N5 file type')
                 detected_series = 'N5'
 
             unique_used_list = []
@@ -876,7 +1068,7 @@ def get_pen_stokes_list_from_table(series, font_name=FONT_NAME):
         It is preferable to store this in one variable as Mac with 8GB reaches some limits"""
     try:
         asciiset_fn = os.path.join(CONFIG, f'fonts_{series.lower()}.note')
-        print(f'   > Getting penstrokes for font: {font_name} using {asciiset_fn}')
+        print(f'   > Getting penstrokes for "{font_name}" font using {asciiset_fn}')
         print()
         ascii_type = None
         # Load the dictionary of pen strokes contained in the fonts note
@@ -1027,9 +1219,9 @@ def pen_strokes_dict_to_bytes(pen_strokes_dict, num_bytes=4, byteorder='little',
         offset_x = 0
         offset_y = 0
         print()
-        print('  > Generating binaries')
+        print('   > Generating binaries')
         for page_str, page_pen_strokes_dict in pen_strokes_dict.items():
-            print(f'   - page {page_str}')
+            print(f'     - page {page_str}')
             page_in_bytes = int(page_str).to_bytes(2, byteorder=byteorder)
             page_tpath_strokes_nb = page_pen_strokes_dict['strokes_nb'].to_bytes(num_bytes, byteorder=byteorder)
             page_stroke_dicts = page_pen_strokes_dict['strokes']
@@ -1038,7 +1230,11 @@ def pen_strokes_dict_to_bytes(pen_strokes_dict, num_bytes=4, byteorder='little',
 
             total_stroke_bytes = page_tpath_strokes_nb
 
+            page_stroke_dicts_len = len(page_stroke_dicts)
+            page_stroke_dicts_idx = 0
             for a_stroke_dict in page_stroke_dicts:
+                page_stroke_dicts_idx += 1
+                print(f'\r       > Processing path {page_stroke_dicts_idx}/{page_stroke_dicts_len}', end='', flush=True)
 
                 if a_stroke_dict == {}:
                     print('*** Fatal error: empty dict in pen_strokes_dict_to_bytes, exiting')
@@ -1151,6 +1347,7 @@ def pen_strokes_dict_to_bytes(pen_strokes_dict, num_bytes=4, byteorder='little',
                 else:
                     total_stroke_bytes += a_stroke_bytes
 
+            print()
             bytes_dict[page_str] = total_stroke_bytes
         return bytes_dict
     except Exception as e:
@@ -1171,7 +1368,7 @@ def generate_ephemeral_images(
         max_horizontal_pixels, max_vertical_pixels, adb_screen_max_x, adb_screen_max_y = series_bounds(series)
 
         print()
-        print('  > Generating images')
+        print('   > Generating images')
         # Parse the dictionary of totalpath objects
         for apage, avalue in pen_strokes_dict.items():
 
@@ -1227,7 +1424,7 @@ def generate_ephemeral_images(
                 # Append the size to create the full image block
                 full_image_block = image_size_bytes + rleimage
 
-                print(f'   - page {apage}: {len(full_image_block)} bytes image')
+                print(f'     - page {apage}: {len(full_image_block)} bytes image')
 
             full_image_dict[apage] = full_image_block
 
@@ -1386,8 +1583,11 @@ def sn_bytes_page_recap(
                 style_name = f'{style_name_[0]}_{style_name_[1]}{style_name_[3]}_{style_name_[4]}'
                 if style_name not in added_styles_list:
                     added_styles_list.append(style_name)
+
+                    # style_rle_address = a_page_templates_dict['address']
+                    # a_json += f'<STYLE_{style_name}:{style_rle_address}>'
                     style_rle_address = a_page_templates_dict['address']
-                    a_json += f'<STYLE_{style_name}:{style_rle_address}>'
+                    a_json += f'<STYLE_{style_name}:{style_rle_address}>'                    
 
             if apply_equipment == 'N5':
                 if 'style_white_a5x2' not in added_styles_list:
@@ -1521,6 +1721,7 @@ def text_to_pen_strokes_nf(
         font_family=FONT_NAME, screen_ratio=1):
     """ For a given text_to_convert, generates a dictionary of list of pen strokes, per page"""
     try:
+
         # TODO Pass this as a variable. Here the meaning is:
         # - extend to 1 next word
         # - use ord 170 for style
@@ -1554,7 +1755,7 @@ def text_to_pen_strokes_nf(
                 fonts_narrowing_before = FONTS_NARROWING_BEFORE
 
             if 'font_ratios' in fonts_adjustment:
-                FONT_RATIOS = fonts_adjustment['font_ratios']
+                FONT_RATIOS = fonts_adjustment['font_ratios'][str(screen_ratio)]
 
             if new_font_size:
                 if 'font_size' in fonts_adjustment:
@@ -1979,6 +2180,10 @@ def text_to_pen_strokes_nf(
                 current_word = current_word.replace('$', '')
             index_letter = 0
             while index_letter < len(current_word):
+                while (index_letter < len(current_word) - 2) and (current_word[index_letter:index_letter+2] == '^p'):
+                    pos_x = starting_pos_x
+                    index_letter += 2
+                    pos_y += max_row_height + delta_y
 
                 xt_rect = []
                 current_letter = current_word[index_letter]
@@ -1995,6 +2200,7 @@ def text_to_pen_strokes_nf(
                 if current_letter == " ":
                     pos_x += delta_x + word_separator
                     index_letter += 1
+
                     continue
 
                 if style_case_upper:
@@ -2083,7 +2289,7 @@ def text_to_pen_strokes_nf(
 
                 carriage_return = False
                 nb_cr = 0
-                while (index_letter < len(current_word) - 2) and (current_word[index_letter+1:index_letter+3] == '^p'):
+                while (index_letter < len(current_word) - 2) and (current_word[index_letter+1:index_letter+2] == '^p'):
                     carriage_return = True
                     index_letter += 2
                     nb_cr += 1
@@ -2128,9 +2334,10 @@ def text_to_pen_strokes_nf(
                             page_number += 1
 
                         else:
-                            print(f'----list_ps was empty for word: {current_word} ')
-                            print(f'------len(current_word_ps): {len(current_word_ps)}')
-                            print(f'-------page_number: {page_number}')
+                            pass
+                            # print(f'----list_ps was empty for word: {current_word} ')
+                            # print(f'------len(current_word_ps): {len(current_word_ps)}')
+                            # print(f'-------page_number: {page_number}')
 
                         pos_x = starting_pos_x
                         pos_y = starting_pos_y
@@ -2154,6 +2361,11 @@ def text_to_pen_strokes_nf(
                             title_ps_c[title_color] = l_title_vl
                         title_ps.extend(l_title_vl)
                     index_letter += 1
+                    while (index_letter < len(current_word) - 2) and (current_word[index_letter:index_letter+2] == '^p'):
+                        pos_x = starting_pos_x
+                        index_letter += 2
+                        pos_y += max_row_height + delta_y
+
                     max_row_height = 0
                     continue
 
@@ -2179,6 +2391,10 @@ def text_to_pen_strokes_nf(
                                 current_xl_points.append((x[0], x[1]))
 
                 index_letter += 1
+                while (index_letter < len(current_word) - 2) and (current_word[index_letter:index_letter+2] == '^p'):
+                    pos_x = starting_pos_x
+                    index_letter += 2
+                    pos_y += max_row_height + delta_y
 
             if len(current_word_ps) > 0:
                 _temp_list = []
@@ -2328,7 +2544,7 @@ def text_to_pen_strokes_nf(
         return None, None, None
 
 
-def psdict_to_note(ps_dict, titles_dict, output_fn, starting_point=None, scratio=1, series=NOTEBOOK_DEVICE, sn_pdf_fn=''):
+def psdict_to_note(ps_dict, titles_dict, output_fn, templates_dict={}, starting_point=None, scratio=1, series=NOTEBOOK_DEVICE, sn_pdf_fn=''):
     """ Create a json with pen_strokes corresponding to text
 
     Parameters:
@@ -2352,35 +2568,99 @@ def psdict_to_note(ps_dict, titles_dict, output_fn, starting_point=None, scratio
         # ---- Binary .Note file building ---------
 
         file_signature = sn_bytes_header()  # Generate the file signature
-        file_id, first_json, _ = sn_bytes_1_header_json(apply_equipment=series)  # Generate fileid and 1st json
+        file_id, first_json, templates_dict = sn_bytes_1_header_json(apply_equipment=series, templates_dict=templates_dict)  # Generate fileid and 1st json
 
         # placeholder_image_bloc = sn_bytes_2_basic_still_image(placeholder_bitmap_fn)
-        placeholder_image_bloc = blank_encoded_image(series)
+        blank_image_bloc = blank_encoded_image(series)
 
         # Load the dictionary of binary representations of totalpath, per page
         totalpath_bytes = pen_strokes_dict_to_bytes(ps_dict, series=series)
 
+        # Generate the dictionary of ephemeral images
         image_layer_dict = generate_ephemeral_images(ps_dict, series=series)
 
         first_bytes_before_image = file_signature + first_json
 
         current_bytes = first_bytes_before_image
 
-        placeholder_image_bloc_address = len(current_bytes)
-        current_bytes += placeholder_image_bloc
+        # Adding the template base64 data (not the RLE image) to the binary and 
+        # storing the address in the templates-dict
+        # # # print(f'------templates_dict keys: {templates_dict.keys()}')
+        # # # for a_page in templates_dict:
+        # # #     a_page_dict = templates_dict[a_page]
+        # # #     an_item_dict = a_page_dict['pdfstylelist']
+        # # #     an_item_b64 = an_item_dict['encoded']
+        # # #     an_item_b64_len = len(an_item_b64)
+        # # #     an_item_b64_len_bytes = int_to_little_endian_bytes(an_item_b64_len)
+        # # #     an_item_dict['address'] = len(current_bytes)
+        # # #     current_bytes += an_item_b64_len_bytes + an_item_b64
+        # # # print(f'------templates_dict keys[1][pdfstylelist]: {templates_dict['1']['pdfstylelist'].keys()}')
 
+        # Record the address of the placeholder (do we really need this if we already have the ephemeral images dict?)
+        placeholder_image_bloc_address = len(current_bytes)
+        # # Add the placeholder data to the binary
+        for a_page in templates_dict:
+            a_page_dict = templates_dict[a_page]
+            rle_image = a_page_dict['rle_image']
+            rle_image_size = int_to_little_endian_bytes(len(rle_image))
+            rle_image_block = rle_image_size + rle_image
+            rle_image_block_address = len(current_bytes)
+            a_page_dict['address'] = rle_image_block_address
+            current_bytes += rle_image_block
+
+
+        blank_image_bloc_address = len(current_bytes)
+        current_bytes += blank_image_bloc
+
+        # Adding ephemeral images to the binary and 
+        # storing addresses
         main_dict = {}
         for ild_p, ild_v in image_layer_dict.items():
+            # Storing image address
             ild_bitmap_address = len(current_bytes)
+            # adding image
             current_bytes += ild_v
+            # computing layer metadata
             ild_main = sn_bytes_layer_json(ild_bitmap_address, name='MAINLAYER')
+            # Storing layer metadata address
             ild_main_address = len(current_bytes)
+            # Adding layer metadata to binary
             current_bytes += ild_main
+            # Updating the dictionary of layers for ephemeral images
             main_dict[ild_p] = ild_main_address
+
+        for a_page in templates_dict:
+
+            a_page_dict = templates_dict[a_page]
+            rle_image_block_address = a_page_dict['address']
+            a_page_dict['layer_address'] = len(current_bytes)
+            img_background_layer = sn_bytes_layer_json(rle_image_block_address, name='BGLAYER')
+            current_bytes += img_background_layer  
+
+
+        # # # for a_page in templates_dict:
+
+        # # #     a_page_dict = templates_dict[a_page]
+
+        # # #     an_item_dict = a_page_dict['pdfstylelist']
+        # # #     an_item_b64 = an_item_dict['encoded']
+        # # #     an_item_b64_len = len(an_item_b64)
+        # # #     an_item_b64_len_bytes = int_to_little_endian_bytes(an_item_b64_len)
+        # # #     an_item_dict['address'] = len(current_bytes)
+        # # #     current_bytes += an_item_b64_len_bytes + an_item_b64   
+
+
+
+
+
         background_layer_address = len(current_bytes)
 
-        background_layer = sn_bytes_layer_json(placeholder_image_bloc_address, name='BGLAYER')
-        current_bytes += background_layer
+
+
+        # MMB 250408 - removing below
+        # # # background_layer = sn_bytes_layer_json(placeholder_image_bloc_address, name='BGLAYER')
+        # # # current_bytes += background_layer
+
 
         current_bytes, titles_recap = build_titles_image_n_details(titles_dict, current_bytes)
 
@@ -2401,6 +2681,7 @@ def psdict_to_note(ps_dict, titles_dict, output_fn, starting_point=None, scratio
 
         # Parsing the pages and add totalpath bytes for each page
         totalpath_address_dict = {}
+
         for a_page_nb, page_totalpath_bytes in totalpath_bytes.items():
             totalpath_size = len(page_totalpath_bytes)
             totalpath_size_bytes = int_to_little_endian_bytes(totalpath_size)
@@ -2408,21 +2689,90 @@ def psdict_to_note(ps_dict, titles_dict, output_fn, starting_point=None, scratio
             current_bytes += totalpath_size_bytes + page_totalpath_bytes
 
         # Parsing the pages and add page information for each page
+        used_styles_list1 = []
         for a_page_nb in totalpath_address_dict:
             a_page_ref_dict = totalpath_address_dict[a_page_nb]
             a_page_total_path = a_page_ref_dict['tp_address']
+            a_page_main_layer_address = main_dict[a_page_nb]
+
+            # Generate page json
+            if a_page_nb in templates_dict:
+                apt_dict = templates_dict[a_page_nb]
+                md5 = apt_dict['md5']
+
+                if md5 not in used_styles_list1:
+                    used_styles_list1.append(md5)
+                # style_p1_name = f'user_pdf_xyz_{len(used_styles_list1)}'
+                style_p1_name = f'user_{md5}'
+                pdfstylelist_name_ = style_p1_name.split('_')
+                pdfstylelist_name = '_'.join(pdfstylelist_name_[:2])
+                a_page_background_layer_address = apt_dict["layer_address"]
+                if a_page_main_layer_address != a_page_background_layer_address:
+                    page_bytes = sn_bytes_page(
+                        a_page_main_layer_address, a_page_background_layer_address,
+                        a_page_total_path, page_style_name=pdfstylelist_name,
+                        page_style_md5=md5)
+                else:
+                    page_bytes = sn_bytes_page(
+                        a_page_main_layer_address, 0, a_page_total_path)
+            else:
+                page_bytes = sn_bytes_page(
+                    a_page_main_layer_address, 0, a_page_total_path)                    
             a_page_ref_dict['pg_address'] = len(current_bytes)
-
-            main_layer_address = main_dict[a_page_nb]
-
-            page_bytes = sn_bytes_page(main_layer_address, background_layer_address, a_page_total_path)
             current_bytes += page_bytes
 
-        page_recap_location = len(current_bytes)
 
+        # # # # Parsing the pages and add page information for each page
+        # # # for a_page_nb in totalpath_address_dict:
+        # # #     a_page_ref_dict = totalpath_address_dict[a_page_nb]
+        # # #     a_page_total_path = a_page_ref_dict['tp_address']
+        # # #     a_page_ref_dict['pg_address'] = len(current_bytes)
+
+        # # #     main_layer_address = main_dict[a_page_nb]
+
+        # # #     page_bytes = sn_bytes_page(main_layer_address, background_layer_address, a_page_total_path)
+        # # #     current_bytes += page_bytes
+
+
+        # # # for a_page_nb in templates_dict:
+        # # #     image_dict = templates_dict[a_page_nb]
+        # # #     pil_image_encoded = image_dict["rle_image"]
+        # # #     if pil_image_encoded is not None:
+
+        # # #         pil_image_encoded_len = len(pil_image_encoded)
+        # # #         pil_image_encoded_len_bytes = int_to_little_endian_bytes(pil_image_encoded_len)
+        # # #         a_t_i_block = pil_image_encoded_len_bytes + pil_image_encoded
+        # # #         a_t_i_block_address = len(current_bytes)
+        # # #         current_bytes += a_t_i_block
+        # # #         ati_layer = sn_bytes_layer_json(a_t_i_block_address, name='BGLAYER')
+        # # #         current_bytes += ati_layer
+        # # #         image_dict['address'] = a_t_i_block_address
+
+        # # #         if a_page_nb in totalpath_bytes:
+        # # #             atad = totalpath_address_dict[a_page_nb]
+        # # #             # Store location of the background layer
+        # # #             background_layer_address = len(current_bytes)
+        # # #             atad['background_layer_address'] = background_layer_address
+        # # #             background_layer = sn_bytes_layer_json(a_t_i_block_address, name='BGLAYER')
+        # # #             current_bytes += background_layer
+
+        # # # # Parsing the pages and add totalpath bytes for each page
+
+        # # # for a_page_nb, page_totalpath_bytes in totalpath_bytes.items():
+        # # #     atad = totalpath_address_dict[a_page_nb]
+        # # #     totalpath_size = len(page_totalpath_bytes)
+        # # #     totalpath_size_bytes = int_to_little_endian_bytes(totalpath_size)
+        # # #     # Add location of Mainlayer and totalpath to dictionary
+        # # #     atad['tp_address'] = len(current_bytes)
+        # # #     # Update binary with totalpath
+        # # #     current_bytes += totalpath_size_bytes + page_totalpath_bytes
+
+
+        page_recap_location = len(current_bytes)
+    
         recap_pages = sn_bytes_page_recap(
             page_recap_location, totalpath_address_dict, placeholder_image_bloc_address,
-            apply_equipment=series, titles_recap=titles_recap)
+            apply_equipment=series, templates_dict=templates_dict, titles_recap=titles_recap)
 
         current_bytes += recap_pages
 
@@ -2839,6 +3189,7 @@ def vectors2psd(
 
             screen_vector_points = a_path_bundle['path']
 
+            # TODO: Revisit the offset relevancy
             # denormalized_points = [topleft_to_topright(x, series=series, unstitch_mode=unstitch, offset_h=-OFFSET_T_X, offset_v=OFFSET_T_Y) for x in screen_vector_points if len(x) > 0]
             denormalized_points = [
                 topleft_to_topright(
@@ -2857,6 +3208,8 @@ def vectors2psd(
             draw_random = True
 
             while draw_random:
+                # TODO: Go through all randomnly assigend numbers to see what makes
+                # Excalidraw file invalid. Here is an attempt to ensure we are nor re-using the same value
                 rand_unsigned_int = random.randint(0, (2**32) - 1)
                 draw_random = rand_unsigned_int in used_rand
                 used_rand.add(rand_unsigned_int)
@@ -2865,10 +3218,8 @@ def vectors2psd(
             a_stroke_dict['vector_unique'] = [rand_unsigned_int] * vector_size
             r_bytes = 'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF000000000000F03F'
             if series != 'N5':
-                # r_bytes += '0000000000000000007C050000500700000000000000040000006E6F6E65040000006E6F6E650000000001000000'
                 r_bytes += '0000000000000000007C050000500700000000000000040000006E6F6E65040000006E6F6E6500000000030000000200000000000000000000000000000000000000'
             else:
-                # r_bytes += '00000000000000000080070000000A00000000000000040000006E6F6E65040000006E6F6E650000000001000000'
                 r_bytes += '00000000000000000080070000000A00000000000000040000006E6F6E65040000006E6F6E6500000000030000000200000000000000000000000000000000000000'
 
             a_stroke_dict['r_bytes'] = r_bytes
