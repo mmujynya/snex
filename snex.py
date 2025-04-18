@@ -1821,7 +1821,7 @@ def main():
         args_dict = vars(args)
 
         if first_arg == '--reset':
-            # The user has decided to revert settings to hard-coded values
+            # The user has decided to revert settings to hard-coded values.
             new_user_settings = {"filename": "demo/xc2sn/version1.06.excalidraw"}
             pysn.save_user_settings(new_user_settings)
             print()
