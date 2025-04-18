@@ -1756,7 +1756,7 @@ def extract_shapes_by_page(excalidraw_filename, page_elements={}, screen_ratio=p
 def main():
     try:
         new_user_settings = None
-        # Initialize conversion variable
+        # Initialize conversion variable.
         do_conversion = True
         # Load the user_settings
         user_settings = pysn.load_user_settings()
