@@ -128,10 +128,12 @@ NEEDLE_POINT_SIZES = {
     "1": 1300,
     "2": 2400
 }
-MARGIN_LEFT_SIZE = 0
+MARGIN_LEFT_SIZE = 0.0
+BLANK_TEMPLATE_PICTURE2R = os.path.join(
+    CONFIG, 'blankmantar.png')
 BLANK_TEMPLATE_PICTURE2 = os.path.join(
     CONFIG, 'blankmanta.png')
-FILE_NAME = 'test/input/demo.excalidraw'
+FILE_NAME = '"demo/xc2sn/version1.06.excalidraw'
 SPECIAL_LENGTH = 0x4000             # (*)
 SPECIAL_LENGTH_FOR_BLANK = 0x400    # (*)
 SPECIAL_LENGTH_MARKER = 0xff        # (*)
@@ -189,9 +191,10 @@ CUSTOM_MAP = {
     "□": 175}
 DEBUG_MODE = False
 FILE_RECOGN_LANGUAGE = 'en_US'
+BLANK_TEMPLATE_PICTURER = os.path.join(
+    CONFIG, 'blanknomadr.png')
 BLANK_TEMPLATE_PICTURE = os.path.join(
     CONFIG, 'blanknomad.png')
-SCALE_RATIO_TEXT2NOTE = 1
 DEFAULT_PEN_COLOR = "black"
 FONTS_FAMILY_MAP = {
     6: "barlow",
@@ -203,11 +206,13 @@ XC_SHAPE_DENSITY = 30  # Higher values will increase a bit filesize, but helps i
 # if a canvas has more than the threshold, it likely include image pen strokes
 # in which case we probably want to have the thinnest pen to keep details (see use of CROWD_THRESHOLD in code)
 XC_CROWD_THRESHOLD = 1000
-XC_ROUND_COORDINATES = True  # Rounds coordinates, may save some space because we also eliminate repetitive points
+XC_ROUND_COORDINATES = False  # Rounds coordinates, may save some space because we also eliminate repetitive points
 XC_DASH_LENGTH = 20
 XC_DASH_GAP_LENGTH = 15
 XC_DOT_LENGTH = 5
 XC_DOT_GAP_LENGTH = 15
+XC_NUM_SAMPLES = 5
+XC_SVG_THIN_RATIO = 1
 
 XC_PAGE_SPACING = 50
 XC_HORIZONTAL_PAGES = False  # If True, the pages will be displayed horizontally
@@ -241,10 +246,10 @@ XC_MYSCRIPT_RATIO = 12
 XC_MAX_UINT32 = 2**32 - 1  # Maximum value for unsigned 32-bit integer (4,294,967,295)
 XC_VERSION_MAX = 1000
 XC_FONT_FAMILY = {
-    5: "excalifont/caveat",
-    6: "nunito/barlow",
-    7: "lilita/segoe",
-    8: "comic/segoe"}
+    "5": "excalifont/caveat",
+    "6": "nunito/barlow",
+    "7": "lilita/segoe",
+    "8": "comic/segoe"}
 
 # Dictionary of global variables exposed to the CLI: option long-name, short-name, description, type and name of global variable
 SETTINGS_DESC_DICT = {
@@ -259,6 +264,12 @@ SETTINGS_DESC_DICT = {
         'description': 'Default number of pages to be created with the --blank option',
         'type': int,
         'var': 'PAGES'
+    },
+    'xcstr': {
+        'short': 'xcstr',
+        'description': 'Adjust this if you want a thinner or thicker pen weight for SVG images',
+        'type': float,
+        'var': 'XC_SVG_THIN_RATIO'
     },
     'debug': {
         'short': 'debug',
@@ -284,6 +295,12 @@ SETTINGS_DESC_DICT = {
         'type': bool,
         'var': 'XC_ROUND_COORDINATES'
     },
+    'xcns': {
+        'short': 'xcns',
+        'description': 'Number of sample points per segment. Increasing this number increases smoothness of svg',
+        'type': int,
+        'var': 'XC_NUM_SAMPLES'
+    },
     'device': {
         'short': 'device',
         'description': 'Notebook Series: N5 for Manta, N6 for others',
@@ -295,11 +312,6 @@ SETTINGS_DESC_DICT = {
         'description': 'Language to be used by MyScript',
         'type': str,
         'var': 'FILE_RECOGN_LANGUAGE'},
-    'fontr': {
-        'short': 'fontr',
-        'description': 'The ratio to apply to the real font-size. for example: 0.7 means 70 percent of the real size',
-        'type': float,
-        'var': 'SCALE_RATIO_TEXT2NOTE'},
     'font_name': {
         'short': 'font_name',
         'description': 'The name of the fonts set used for text-to-notes',
@@ -310,7 +322,13 @@ SETTINGS_DESC_DICT = {
         'short': 'lmargin',
         'description': 'The left margin to apply when converting a text to note',
         'type': float,
-        'var': 'MARGIN_LEFT_SIZE'}
+        'var': 'MARGIN_LEFT_SIZE'},
+    'xcfonts': {
+        'short': 'xcfonts',
+        'description': 'Fonts_substitution in Excalidraw',
+        'type': dict,
+        'var': 'XC_FONT_FAMILY'
+    }
 }
 
 ALLOWED_GLOBAL = {settings['var'] for settings in SETTINGS_DESC_DICT.values()}
@@ -404,7 +422,6 @@ def font_size_to_pixels(font_size, dpi=300):
 
 def get_key_by_value(color_dict, value):
     for key, val in color_dict.items():
-        print(f'----{key}={val}')
         if val == value:
             return key
     return None  # Return None if value not found
@@ -549,8 +566,8 @@ def topright_to_topleft(a_reversed_point, max_horizontal_pixels, max_vertical_pi
     try:
         a_point = (
             max(min(
-                round((adb_screen_max_x+OFFSET_T_X-a_reversed_point[1])*max_horizontal_pixels/adb_screen_max_x), max_horizontal_pixels), 0),
-            max(min(round((a_reversed_point[0]+OFFSET_T_Y)*max_vertical_pixels/adb_screen_max_y), max_vertical_pixels), 0)
+                round((adb_screen_max_x+OFFSET_T_X-a_reversed_point[1])*max_horizontal_pixels/adb_screen_max_x, 6), max_horizontal_pixels), 0),
+            max(min(round((a_reversed_point[0]+OFFSET_T_Y)*max_vertical_pixels/adb_screen_max_y, 6), max_vertical_pixels), 0)
         )
     except Exception as e:
         print(f'**-topright_to_topleft:{e}')
@@ -722,6 +739,8 @@ def get_pen_strokes_dict(note_fn, search_keyword=None):
                     a_position = page_totalpath_address + 8
                     for pen_stroke_index in range(page_totalpath_strokes_nb):
 
+                        skipper = 0
+
                         _, pen_stroke_size = read_endian_int_at_position(note_file_binaries, a_position)
 
                         _, pen_type = read_endian_int_at_position(note_file_binaries, a_position + 4, num_bytes=1)
@@ -738,7 +757,10 @@ def get_pen_strokes_dict(note_fn, search_keyword=None):
                         _, avg_contours_y = read_endian_int_at_position(note_file_binaries, a_position + 116)
                         _, max_contours_x = read_endian_int_at_position(note_file_binaries, a_position + 120)
                         _, max_contours_y = read_endian_int_at_position(note_file_binaries, a_position + 124)
-                        _, vector_size = read_endian_int_at_position(note_file_binaries, a_position + 216)
+                        _, skipper = read_endian_int_at_position(note_file_binaries, a_position + 212)
+                        if skipper != 0:
+                            print(f'**- Skipping: {skipper*24} bytes at position: {a_position + 216}')
+                        _, vector_size = read_endian_int_at_position(note_file_binaries, a_position + 216 + skipper*24)
                         if vector_size == 0:
                             print(f'**- Zero size vector skipped at address: {a_position}')
                             a_position += pen_stroke_size + 4
@@ -746,17 +768,17 @@ def get_pen_strokes_dict(note_fn, search_keyword=None):
 
                         vector_points = []
                         for index_point in range(vector_size):
-                            _, point_y = read_endian_int_at_position(note_file_binaries, a_position + 220 + index_point * 8)
-                            _, point_x = read_endian_int_at_position(note_file_binaries, a_position + 220 + index_point * 8 + 4)
+                            _, point_y = read_endian_int_at_position(note_file_binaries, a_position + 220 + skipper*24 + index_point * 8)
+                            _, point_x = read_endian_int_at_position(note_file_binaries, a_position + 220 + skipper*24 + index_point * 8 + 4)
                             vector_points.append([point_y, point_x])
 
                         pressure_points = []
                         for index_pressure in range(vector_size):
-                            _, ppoint = read_endian_int_at_position(note_file_binaries, a_position + 224 + vector_size * 8 + index_pressure*2, num_bytes=2)
+                            _, ppoint = read_endian_int_at_position(note_file_binaries, a_position + 224 + skipper*24 + vector_size * 8 + index_pressure*2, num_bytes=2)
                             pressure_points.append(ppoint)
 
                         # Skip the headear of the unique vector to read the first unique number
-                        _, unique_number = read_endian_int_at_position(note_file_binaries, a_position + 228 + vector_size * 8 + vector_size*2, num_bytes=4)
+                        _, unique_number = read_endian_int_at_position(note_file_binaries, a_position + 228 + skipper*24 + vector_size * 8 + vector_size*2, num_bytes=4)
 
                         # Build the unique vector. TODO: Probably better to just read it
                         unique_used_list = [unique_number]*vector_size
@@ -779,7 +801,7 @@ def get_pen_strokes_dict(note_fn, search_keyword=None):
                         #                 > We add 54 bytes
                         #                   a_position + 290 + sequence_length + vector_size * 15
 
-                        _, contours_number = read_endian_int_at_position(note_file_binaries, a_position + 290 + sequence_length + vector_size * 15, num_bytes=4)
+                        _, contours_number = read_endian_int_at_position(note_file_binaries, a_position + skipper*24 + 290 + sequence_length + vector_size * 15, num_bytes=4)
 
                         # position is now:  a_position + 310 + vector_size * 15
                         contour_processed_nb = 0
@@ -793,21 +815,21 @@ def get_pen_strokes_dict(note_fn, search_keyword=None):
                             print(f'> page_totalpath_address: {page_totalpath_address}')
                             print(f'> last good trail address: {last_good_address}')
                             print(f'> Failing Trail Address: {a_position}')
-                            print(f'> Failing contour Address: {a_position + 290 + sequence_length + vector_size * 15}')
+                            print(f'> Failing contour Address: {a_position + skipper*24 + 290 + sequence_length + vector_size * 15}')
                             print(f'  Pen_stroke_size:{pen_stroke_size} at: {a_position}')
                             print(f' Vector_size:{vector_size} at: {a_position + 216}')
                             return None, None, None
 
                         for contour_index in range(contours_number):
                             contour_count_fails = 0
-                            _, contour_size = read_endian_int_at_position(note_file_binaries, a_position + 310 + vector_size * 15 + contour_processed_nb + contour_count, num_bytes=4)
+                            _, contour_size = read_endian_int_at_position(note_file_binaries, a_position + skipper*24 + 310 + vector_size * 15 + contour_processed_nb + contour_count, num_bytes=4)
                             contours_list = []
 
                             last_contour_point = None
 
                             for contour_element_idx in range(contour_size):
-                                contour_x = decimal_ieee754_from_binary(note_file_binaries, a_position + 314 + vector_size * 15 + contour_element_idx*8 + contour_count, offset_x)
-                                contour_y = decimal_ieee754_from_binary(note_file_binaries, a_position + 318 + vector_size * 15 + contour_element_idx*8 + contour_count, offset_y)
+                                contour_x = decimal_ieee754_from_binary(note_file_binaries, a_position + skipper*24 + 314 + vector_size * 15 + contour_element_idx*8 + contour_count, offset_x)
+                                contour_y = decimal_ieee754_from_binary(note_file_binaries, a_position + skipper*24 + 318 + vector_size * 15 + contour_element_idx*8 + contour_count, offset_y)
                                 if contour_x and contour_y:
                                     last_contour_point = [contour_x, contour_y]
                                     contours_list.append(last_contour_point)
@@ -846,7 +868,7 @@ def get_pen_strokes_dict(note_fn, search_keyword=None):
         return None, None, None, ''
 
 
-def draw_bitmap_from_vectors(vector_dict, image_size=(500, 500), image_crop=None, background_color=(255, 255, 255), line_width=3):
+def draw_bitmap_from_vectors(vector_dict, series, image_size=(500, 500), image_crop=None, background_color=(255, 255, 255), line_width=3):
     """
     Draws a bitmap from a list of vectors of points.
     Args:
@@ -860,7 +882,10 @@ def draw_bitmap_from_vectors(vector_dict, image_size=(500, 500), image_crop=None
     """
     try:
         # Create a blank image with the specified background color
-        image = Image.open(BLANK_TEMPLATE_PICTURE2)
+        if series == 'N5':
+            image = Image.open(BLANK_TEMPLATE_PICTURE2R)
+        else:
+            image = Image.open(BLANK_TEMPLATE_PICTURER)
 
         # image = Image.new("RGB", image_size, background_color)
         image = image.convert('L')
@@ -975,91 +1000,6 @@ def rle_encode_img(image):
     return result, encoded
 
 
-def strokes_at_point(strokes_list, x, y, row_height=90, scratio=1, get_xt_point=False, new_weight=None, new_color=None, series=NOTEBOOK_DEVICE):
-    """ Returns a modified strokes list for coordinates x,y (ref MAX_HORIZONTAL_PIXELS/MAX_VERTICAL_PIXELS)
-        The function first checks the relative delta_x and delta_y for all the
-        strokes in the list. It then applies the x/y coordinates to that point
-        and shifts the other strokes by their delta.
-        We do not check if the shifting movs the strokes out of the screen boundaries
-
-        strokes_list is a list of dictionaries"""
-    try:
-
-        max_horizontal_pixels, max_vertical_pixels, adb_screen_max_x, adb_screen_max_y = series_bounds(series)
-
-        min_x = min([x['min_c_x'] for x in strokes_list])
-        max_x = max([x['max_c_x'] for x in strokes_list])
-        min_y = min([x['min_c_y'] for x in strokes_list])
-        max_y = max([x['max_c_y'] for x in strokes_list])
-
-        stroke_width = max_x - min_x
-        stroke_height = max_y - min_y
-
-        y_adjustment = max(0, row_height - stroke_height)
-        delta_x = x - min_x
-
-        delta_y = y - min_y + y_adjustment
-        delta_x_mu = -1 * round(delta_x * adb_screen_max_x / max_horizontal_pixels)
-
-        delta_y_mu = round(delta_y * adb_screen_max_y / max_vertical_pixels)
-
-        scratio_x = round(adb_screen_max_x*(1-scratio)*(1-MARGIN_LEFT_SIZE))
-
-        scratio_pix = round(max_horizontal_pixels*(1-scratio)*(1-MARGIN_LEFT_SIZE))
-
-        # Create a deep copy of the list
-        mod_strokes_list = copy.deepcopy(strokes_list)
-
-        # Parse the list
-
-        for ps_dict in mod_strokes_list:
-
-            new_min_x = round(scratio*(ps_dict['min_c_x'] + delta_x)) + scratio_pix
-            new_max_x = round(scratio*(ps_dict['max_c_x'] + delta_x)) + scratio_pix
-            new_min_y = round(scratio*(ps_dict['min_c_y'] + delta_y))
-            new_max_y = round(scratio*(ps_dict['max_c_y'] + delta_y))
-
-            if new_weight:
-                ps_dict['weight'] = new_weight
-
-            if new_color:
-                ps_dict['color'] = new_color
-
-            ps_dict['min_c_x'] = max(min(new_min_x, max_horizontal_pixels), 0)
-            ps_dict['min_c_y'] = max(min(new_min_y, max_vertical_pixels), 0)
-            ps_dict['max_c_x'] = max(min(new_max_x, max_horizontal_pixels), 0)
-            ps_dict['max_c_y'] = max(min(new_max_y, max_vertical_pixels), 0)
-            ps_dict['avg_c_x'] = max(min(round(scratio*(ps_dict['avg_c_x'] + delta_x)) + scratio_x, max_horizontal_pixels), 0)
-            ps_dict['avg_c_y'] = max(min(round(scratio*(ps_dict['avg_c_y'] + delta_y)), max_vertical_pixels), 0)  # TODO: Based on 1 example. this was unchanged. WHY? confirm
-            xt_vector = [
-                [
-                    max(min(round(scratio*(x[0] + delta_y_mu)), adb_screen_max_y), 0),
-                    max(min(round(scratio*(x[1] + delta_x_mu) + scratio_x), adb_screen_max_x), 0)] for x in ps_dict['vector_points']]
-            ps_dict['vector_points'] = xt_vector
-
-            if get_xt_point:
-                xt_x_list = [x[1] for x in xt_vector]
-                xt_y_list = [x[0] for x in xt_vector]
-                xt_rect = [min(xt_x_list), min(xt_y_list), max(xt_x_list), max(xt_y_list)]
-            else:
-                xt_rect = []
-
-            mod_contours = {}
-            for contour_nb, contour_value in ps_dict['contours'].items():
-                new_list = [
-                    [
-                        max(min(round(scratio*(x[0] + delta_x) + scratio_pix), max_horizontal_pixels), 0),
-                        max(min(round(scratio*(x[1] + delta_y)), max_vertical_pixels), 0)] for x in contour_value]
-                mod_contours[contour_nb] = new_list
-            ps_dict['contours'] = mod_contours
-
-        return mod_strokes_list, stroke_width, stroke_height, xt_rect
-    except Exception as e:
-        print()
-        print(f'*** strokes_at_point: {e}')
-        return None, 0, 0, []
-
-
 def get_pen_stokes_list_from_table(series, font_name=FONT_NAME):
     """ Gets the list of pen strokes.
         Parameters:
@@ -1068,7 +1008,9 @@ def get_pen_stokes_list_from_table(series, font_name=FONT_NAME):
         It is preferable to store this in one variable as Mac with 8GB reaches some limits"""
     try:
         asciiset_fn = os.path.join(CONFIG, f'fonts_{series.lower()}.note')
-        print(f'   > Getting penstrokes for "{font_name}" font using {asciiset_fn}')
+        print()
+        path_parts = asciiset_fn.split(os.sep)
+        print(f'   > Loading "{font_name}" font pen strokes using {os.path.join(path_parts[-2], path_parts[-1])}')
         print()
         ascii_type = None
         # Load the dictionary of pen strokes contained in the fonts note
@@ -1376,9 +1318,9 @@ def generate_ephemeral_images(
 
             # Create a blank image with the specified background color
             if series in ['N5']:
-                image = Image.open(BLANK_TEMPLATE_PICTURE2)
+                image = Image.open(BLANK_TEMPLATE_PICTURE2R)
             else:
-                image = Image.open(BLANK_TEMPLATE_PICTURE)
+                image = Image.open(BLANK_TEMPLATE_PICTURER)
 
             draw = ImageDraw.Draw(image)
 
@@ -1758,6 +1700,7 @@ def text_to_pen_strokes_nf(
                 FONT_RATIOS = fonts_adjustment['font_ratios'][str(screen_ratio)]
 
             if new_font_size:
+
                 if 'font_size' in fonts_adjustment:
                     font_size = fonts_adjustment['font_size']
                     ratio_x = round(FONT_RATIOS[0]*new_font_size/font_size, 2)
@@ -1768,12 +1711,22 @@ def text_to_pen_strokes_nf(
             interval = next(iter(fonts_vertical_adjustment_))
             fonts_vertical_adjustment = interval.data
 
+            if 'delta_x' in fonts_vertical_adjustment:
+                delta_x = fonts_vertical_adjustment['delta_x']
+            if 'delta_y' in fonts_vertical_adjustment:
+                delta_y = fonts_vertical_adjustment['delta_y']
+            if 'word_separator' in fonts_vertical_adjustment:
+                word_separator = fonts_vertical_adjustment['word_separator']
+
             if fonts_vertical_adjustment == {}:
                 fonts_vertical_adjustment = CHAR_V_OFFSET
 
         except Exception as e:
             print(f'*** Vertical adjustment: {e}')
             print(f' >  File: {fonts_adj_json_fn}. Using default')
+            print(f' >  new_font_size: {new_font_size}')
+            print(f' >  font_size: {font_size}')
+
             fonts_vertical_adjustment = CHAR_V_OFFSET
             fonts_narrowing_after = FONTS_NARROWING_AFTER
             fonts_narrowing_before = FONTS_NARROWING_BEFORE
@@ -2511,7 +2464,7 @@ def text_to_pen_strokes_nf(
 
                     new_dict[tpk_key] = list(converted_list)
 
-                an_image = draw_bitmap_from_vectors(new_dict, (max_horizontal_pixels, max_vertical_pixels), image_crop=a_pagetitle_rect, background_color=style_bg_color)
+                an_image = draw_bitmap_from_vectors(new_dict, series, (max_horizontal_pixels, max_vertical_pixels), image_crop=a_pagetitle_rect, background_color=style_bg_color)
 
                 rleimage, encoded = rle_encode_img(an_image)
 
@@ -3083,7 +3036,7 @@ def vectors2psd(
                     avg_x = round(sum(x_coords) / len(x_coords) - 1)
                     avg_y = round(sum(y_coords) / len(y_coords) - 1)
                 else:
-                    min_x = min_x = min_x = min_x = min_x = 0
+                    min_x = max_x = min_y = max_y = avg_x = avg_y = 0
 
                 a_stroke_dict['min_c_x'] = max(min(min_x, max_horizontal_pixels), 0)
                 a_stroke_dict['min_c_y'] = max(min(min_y, max_vertical_pixels), 0)

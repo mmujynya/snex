@@ -1,13 +1,20 @@
 {
-    "filename": "test/input/s2.excalidraw",
-    "pages": 2,
-    "debug": true,
-    "xc_screen_ratio": 3,
+    "filename": "demo/xc2sn/version1.06.excalidraw",
+    "pages": 3,
+    "xcstr": 1,
+    "debug": false,
+    "xc_screen_ratio": 1,
     "xc_crowd_ratio": 1000,
-    "xc_round_coord": true,
+    "xc_round_coord": false,
+    "xcns": 5,
     "device": "N5",
     "language": "en_US",
-    "fontr": 1,
     "font_name": "barlow",
-    "lmargin": 0
+    "lmargin": 0.0,
+    "xcfonts": {
+        "5": "excalifont/caveat",
+        "6": "nunito/barlow",
+        "7": "lilita/segoe",
+        "8": "comic/segoe"
+    }
 }

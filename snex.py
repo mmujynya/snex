@@ -11,33 +11,194 @@ import argparse
 import base64
 from io import BytesIO
 from PIL import Image
+import xml.etree.ElementTree as ET
+from svgpathtools import parse_path
+import numpy as np
 
 unique_list = []
 update_list = []
 VERSION = 1.06
 
 
-def load_excalidraw_images(filename, frame_mapping, series, screen_ratio):
+def resize_strokes(strokes, target_width, target_height, dest_origin=(0, 0), preserve_aspect_ratio=True):
+    """
+    Resize a list of strokes (each stroke is a list of (x, y) points) so that the
+    overall content fits within the target width and height. Then translate the
+    strokes so that the bounding box’s top-left corner moves to the specified destination.
+
+    Parameters:
+        strokes (list of list of tuples): The strokes to resize.
+        target_width (float): The target width for scaling.
+        target_height (float): The target height for scaling.
+        dest_origin (tuple): (x, y) where you want the top-left corner of the resized
+                             image to be located.
+        preserve_aspect_ratio (bool): If True, scales uniformly to preserve the aspect ratio.
+                                      If False, scales x and y independently.
+
+    Returns:
+        list of list of tuples: The resized and translated strokes.
+    """
+    # Flatten all points to determine the original bounding box.
+    all_points = [pt for stroke in strokes for pt in stroke]
+    xs = [pt[0] for pt in all_points]
+    ys = [pt[1] for pt in all_points]
+
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+
+    original_width = max_x - min_x
+    original_height = max_y - min_y
+    if original_width == 0 or original_height == 0:
+        raise ValueError("Strokes have zero width or height; cannot be resized.")
+
+    new_strokes = []
+
+    if preserve_aspect_ratio:
+        # Compute uniform scale factor based on the limiting dimension.
+        scale = min(target_width / original_width, target_height / original_height)
+
+        # Use dest_origin as the new top-left corner.
+        offset_x = dest_origin[0]
+        offset_y = dest_origin[1]
+
+        # If you wish, you can still center the image inside the target dimensions and then
+        # move it to dest_origin, but here we assume that dest_origin is where the scaled image's
+        # top-left corner should be placed.
+        for stroke in strokes:
+            new_stroke = []
+            for (x, y) in stroke:
+                new_x = (x - min_x) * scale + offset_x
+                new_y = (y - min_y) * scale + offset_y
+                new_stroke.append((new_x, new_y))
+            new_strokes.append(new_stroke)
+    else:
+        # Independent scaling for x and y.
+        scale_x = target_width / original_width
+        scale_y = target_height / original_height
+
+        offset_x = dest_origin[0]
+        offset_y = dest_origin[1]
+
+        for stroke in strokes:
+            new_stroke = []
+            for (x, y) in stroke:
+                new_x = (x - min_x) * scale_x + offset_x
+                new_y = (y - min_y) * scale_y + offset_y
+                new_stroke.append((new_x, new_y))
+            new_strokes.append(new_stroke)
+
+    return new_strokes
+
+
+def svg_to_relative_strokes(origin, svg_content, num_samples=pysn.XC_NUM_SAMPLES, tolerance=1e-9):
+    """
+    Extracts separate strokes (continuous vector subpaths) from an SVG image and
+    converts the points to coordinates relative to a given origin (top-left).
+
+    Instead of using only segment endpoints, this version samples additional
+    points along each segment (using 'num_samples'). This leads to smoother curves.
+
+    Parameters:
+        origin (tuple): (ox, oy) representing the top-left origin.
+        svg_content (str or bytes): The SVG content. If provided as bytes, it will be decoded.
+        num_samples (int): Number of sample points per segment (including endpoints).
+                           Increasing this number increases smoothness.
+        tolerance (float): Numerical tolerance for comparing points.
+
+    Returns:
+        list of list of tuples: Each inner list represents one stroke (list of (x, y) points
+        relative to the origin). Separate strokes are created for discontinuous parts.
+    """
+    ox, oy = origin
+
+    # If the SVG content is given as bytes, decode it.
+    if isinstance(svg_content, bytes):
+        svg_content = svg_content.decode('utf-8', errors='replace')
+
+    try:
+        root = ET.fromstring(svg_content)
+    except ET.ParseError as e:
+        raise ValueError("Invalid SVG content provided.") from e
+
+    # Define common namespace mappings (common with Inkscape or other SVG tools)
+    ns = {
+        'svg': 'http://www.w3.org/2000/svg',
+        'inkscape': 'http://www.inkscape.org/namespaces/inkscape',
+        'sodipodi': 'http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd',
+        'xlink': 'http://www.w3.org/1999/xlink'
+    }
+
+    # Look for <path> elements; try namespaced search first, then fallback.
+    path_elements = root.findall('.//svg:path', ns)
+    if not path_elements:
+        path_elements = root.findall('.//path')
+
+    all_strokes = []
+
+    for path_elem in path_elements:
+        d = path_elem.attrib.get('d')
+        if not d:
+            continue  # Skip if no path data.
+
+        # Parse the path using svgpathtools.
+        path_obj = parse_path(d)
+
+        strokes = []  # List to hold strokes for this <path> element.
+        current_stroke = []  # Points for the current stroke.
+
+        for segment in path_obj:
+            # Determine if we need to start a new stroke if there's a discontinuity.
+            if current_stroke:
+                # Check if the start of the segment matches the last point of the current stroke.
+                if abs(segment.start - current_stroke[-1]) > tolerance:
+                    strokes.append(current_stroke)
+                    current_stroke = []
+
+            # Sample points along this segment.
+            ts = np.linspace(0, 1, num_samples)
+            sampled_points = [segment.point(t) for t in ts]
+
+            # If this segment continues an existing stroke, avoid duplicating the first point.
+            if current_stroke:
+                sampled_points = sampled_points[1:]
+
+            # Extend the current stroke with the sampled points.
+            current_stroke.extend(sampled_points)
+
+        # Append any remaining stroke.
+        if current_stroke:
+            strokes.append(current_stroke)
+
+        # Convert complex numbers to (x, y) tuples with coordinates relative to origin.
+        for stroke in strokes:
+            relative_stroke = [(pt.real + ox, pt.imag + oy) for pt in stroke]
+            all_strokes.append(relative_stroke)
+
+    return all_strokes
+
+
+def load_excalidraw_images(filename, frame_mapping, series, screen_ratio, adict):
     """
     Loads all image elements from an Excalidraw file.
 
-    Returns a list of tuples (pil_image, x, y) where:
-      - pil_image is the Pillow image object for the element,
-      - (x, y) are the coordinates to paste the image.
+    Returns a dictionary with the RLE encoded image where the image was pasted
     """
     try:
         with open(filename, 'r', encoding='utf-8', errors="replace") as f:
-            excalidraw_file = json.load(f)       
-        source_folder = os.path.dirname(filename) 
+            excalidraw_file = json.load(f)
+
         templates_dict = {}
         templates_dict_f = {}
         image_elements = [elem for elem in excalidraw_file.get("elements", []) if elem.get("type") == "image"]
         if not image_elements:
             raise ValueError("No image elements found in the Excalidraw file.")
 
+        thick_ratio = globals()['pysn.XC_SVG_THIN_RATIO']
+
         for elem in image_elements:
             x = int(elem.get("x", 0))
             y = int(elem.get("y", 0))
+
             width = int(elem.get("width", 0))
             height = int(elem.get("height", 0))
 
@@ -45,6 +206,7 @@ def load_excalidraw_images(filename, frame_mapping, series, screen_ratio):
 
             # Get the base64 image data from the "files" dictionary
             file_data = excalidraw_file.get("files", {}).get(asset_id, {})
+
             image_data = file_data.get("dataURL")
             if not image_data:
                 print(f"Warning: Image data not found for assetId: {asset_id}. Skipping this element.")
@@ -54,48 +216,113 @@ def load_excalidraw_images(filename, frame_mapping, series, screen_ratio):
             if frame_id not in frame_mapping:
                 # Skip text elements not attached to a recognized frame.
                 continue
+            image_type = file_data.get("mimeType")
+
             # Retrieve frame parameters.
             frame_props = frame_mapping[frame_id]
             page_number = frame_props["page_number"]
             base_width = frame_props["width"]
             base_height = frame_props["height"]
-
             frame_x = frame_props["x"]
             frame_y = frame_props["y"]
 
+            # Add advertisement pen-strokes (templates are not displaying for empty pages)
+            if page_number not in adict:
+                adict[page_number] = [
+                        {'type': 'text',
+                         'x': 1370,
+                         'y': 120,
+                         'width': 425,
+                         'height': 45,
+                         'color': '#1e1e1e',
+                         'text': f'Generated by SNEX version {VERSION}',
+                         'fontSize': 200,
+                         'originalFontSize': 18,
+                         'font_ratio': 0.55,
+                         'fontFamily': 'barlow'}]
 
             # Remove the header if present
             if image_data.startswith("data:"):
                 image_data = image_data.split(",", 1)[1]
 
-            # Decode the image data and open it as a Pillow image
-            image_bytes = base64.b64decode(image_data)                
+            image_bytes = base64.b64decode(image_data)
+            print(f'       - image_type: {image_type}')
 
-            pil_image = Image.open(BytesIO(image_bytes))
-            # Resize to the specified dimensions
-            pil_image = pil_image.resize((width*screen_ratio, height*screen_ratio))
+            # Handling PNG
+            if image_type in ['image/png', 'image/jpeg']:
 
-            # if there is already a template in the dictionary, use it
-            if page_number in templates_dict:
-                a_template_dict = templates_dict[page_number]
-                a_template = a_template_dict['image']
-            else:
-                if series == 'N5':
-                    a_template_fn = pysn.BLANK_TEMPLATE_PICTURE2
+                # Decode the image data and open it as a Pillow image
+
+                pil_image = Image.open(BytesIO(image_bytes))
+                # Resize to the specified dimensions
+                pil_image = pil_image.resize((width*screen_ratio, height*screen_ratio))
+
+                # if there is already a template in the dictionary, use it
+                if page_number in templates_dict:
+                    a_template_dict = templates_dict[page_number]
+                    a_template = a_template_dict['image']
                 else:
-                    a_template_fn = pysn.BLANK_TEMPLATE_PICTURE
-                a_template = Image.open(a_template_fn)
-                a_template_dict = {}
+                    if series == 'N5':
+                        a_template_fn = pysn.BLANK_TEMPLATE_PICTURE2
+                    else:
+                        a_template_fn = pysn.BLANK_TEMPLATE_PICTURE
+                    a_template = Image.open(a_template_fn)
+                    a_template_dict = {}
 
-            if pysn.XC_HORIZONTAL_PAGES:
-                recovered_min_c_x = screen_ratio*(x - (page_number - 1) * (pysn.XC_PAGE_SPACING + base_width))
-                recovered_min_c_y = screen_ratio*y
-            else:
-                recovered_min_c_x = screen_ratio*x
-                recovered_min_c_y = screen_ratio*(y - (page_number - 1) * (pysn.XC_PAGE_SPACING + base_height))
-            a_template.paste(pil_image, (recovered_min_c_x, recovered_min_c_y))
-            a_template_dict['image'] = a_template
-            templates_dict[page_number] = a_template_dict
+                if pysn.XC_HORIZONTAL_PAGES:
+                    recovered_min_c_x = screen_ratio*(x - (page_number - 1) * (pysn.XC_PAGE_SPACING + base_width))
+                    recovered_min_c_y = screen_ratio*y
+                else:
+                    recovered_min_c_x = screen_ratio*x
+                    recovered_min_c_y = screen_ratio*(y - (page_number - 1) * (pysn.XC_PAGE_SPACING + base_height))
+                a_template.paste(pil_image, (recovered_min_c_x, recovered_min_c_y))
+                a_template_dict['image'] = a_template
+                templates_dict[page_number] = a_template_dict
+
+            # Handling SVG files
+            elif image_type == 'image/svg+xml':
+                print("       Tip: import a PNG image if you don't need to resize or edit ...")
+
+                # Extract relative vector paths.
+                # origin = (x, y)
+                origin = (x-frame_x, y-frame_y)
+                paths = svg_to_relative_strokes(origin, image_bytes)
+                len_paths = len(paths)
+
+                if len_paths < 100:
+                    stwidth = 2*thick_ratio
+                elif len_paths < 500:
+                    stwidth = 1*thick_ratio
+                else:
+                    stwidth = 0.1*thick_ratio
+                if len_paths > 0:
+
+                    paths = resize_strokes(paths, width*screen_ratio, height*screen_ratio, dest_origin=origin)
+
+                    for path in paths:
+                        l_points = [[pt[0], pt[1]] for pt in path]
+                        recovered_points = [pt for i, pt in enumerate(l_points) if i == 0 or pt != l_points[i-1]]
+
+                        an_svg_image = {
+                            'type': 'freedraw',
+                            'x': x,
+                            'y': y,
+                            'width': width,
+                            'height': height,
+                            'strokeWidth': stwidth,
+                            'color': '#1e1e1e',
+                            'points': recovered_points}
+                        if page_number in adict:
+                            dict_page = adict[page_number]
+                            dict_page.append(an_svg_image)
+                            adict[page_number] = dict_page
+                        else:
+                            adict[page_number] = [an_svg_image]
+
+                # print("Relative vector paths:")
+                # print(len(paths))
+                # for i, path in enumerate(paths):
+                #     print(f"Path {i+1}: len:{len(path)} {path[:5]}")
 
         for a_page, pil_image_dict in templates_dict.items():
             pil_image = pil_image_dict['image']
@@ -110,11 +337,12 @@ def load_excalidraw_images(filename, frame_mapping, series, screen_ratio):
             else:
                 pil_image_encoded = None
                 an_md5 = 0
-            # Write the PNG binary content to a file
-            output_png_fn = os.path.join(source_folder, f'user_{an_md5}.png')
 
-            with open(output_png_fn, 'wb') as f:
-                f.write(png_binary)
+            # # Write the PNG binary content to a file
+            # output_png_fn = os.path.join(source_folder, f'user_{an_md5}.png')
+
+            # with open(output_png_fn, 'wb') as f:
+            #     f.write(png_binary)
 
             pil_image_encoded = png_binary   # MMB testing
             templates_dict_f[str(a_page)] = {
@@ -122,10 +350,10 @@ def load_excalidraw_images(filename, frame_mapping, series, screen_ratio):
                 "rle_image": pil_image_encoded,
                 "md5": an_md5}
 
-        return templates_dict_f
+        return adict, templates_dict_f
     except Exception as e:
-        print(f'*** load_excalidraw_images: {e}')
-        return {}
+        print(f'      - load_excalidraw_images: {e}')
+        return adict, {}
 
 
 def densify_stroke(stroke, factor=2, dashed=False, dotted=False, arrows=False):
@@ -678,18 +906,47 @@ def create_pages(
             - excalidraw_file (dict): The Excalidraw file as a dictionary.
             - page_mapping (dict): A mapping from page number (1-indexed) to the frame element.
     """
-    # Check if the provided model is valid.
+    # Initialize the excalidraw variable
+    excalidraw_file = {}
+    elements = []
+    page_mapping = {}
+    offset = 0
 
-    if series not in resolutions:
-        raise ValueError("Invalid model. Please use 'N6' or 'N5'.")
+    # Check if series contains a filename or a series. If a series, it's a new template
+    new_template = series in resolutions
+
+    if new_template:
+        # Build the overall Excalidraw file structure.
+        excalidraw_file = {
+            "type": "excalidraw",
+            "version": 2,
+            "source": "https://excalidraw.com",
+            "appState": {
+                "gridSize": 20,
+                "gridStep": 5,
+                "gridModeEnabled": False,
+                "viewBackgroundColor": "#ffffff"
+            },
+            "files": {}}
+    else:
+        # Load the Excalidraw file.
+        with open(series, 'r', encoding='utf-8', errors="replace") as f:
+            excalidraw_file = json.load(f)
+        elements = excalidraw_file.get("elements", [])
+        page_elements = [elem for elem in elements if elem.get("type") == "frame" and elem.get("name")[:5] == "Page "]
+
+        offset = len(page_elements)
+
+        if offset > 0:
+            page_1 = page_elements[0]
+            series = page_1.get('pysn', 'N5')
+            screen_ratio = page_1.get('screen_ratio', screen_ratio)
 
     frame_width, frame_height = resolutions[series]
     frame_width = int(frame_width/screen_ratio)
     frame_height = int(frame_height/screen_ratio)
-    elements = []
-    page_mapping = {}
 
-    for i in range(num_pages):
+    for i in range(offset, num_pages + offset):
         # Compute positions for horizontal or vertical arrangement.
         if horizontal_pages:
             x = initial_x + i * (frame_width + spacing)
@@ -771,22 +1028,8 @@ def create_pages(
             elements.append(ocr_frame)
         page_mapping[i + 1] = frame
 
-    # Build the overall Excalidraw file structure.
-    excalidraw_file = {
-        "type": "excalidraw",
-        "version": 2,
-        "source": "https://excalidraw.com",
-        "elements": elements,
-        "appState": {
-            "gridSize": 20,
-            "gridStep": 5,
-            "gridModeEnabled": False,
-            "viewBackgroundColor": "#ffffff"
-        },
-        "files": {}
-    }
-
-    return excalidraw_file, page_mapping
+    excalidraw_file["elements"] = elements
+    return excalidraw_file, page_mapping, new_template
 
 
 def page_number2frame(excalidraw_file, page_number, ocr=False):
@@ -857,7 +1100,7 @@ def add_ps2canvas(
                 x, max_horizontal_pixels, max_vertical_pixels, adb_screen_max_x, adb_screen_max_y) for x in stroke_vector_points]
 
         # Find the frame corresponding to the given page number.
-        vector_points = [(round((x[0]-min_c_x)/screen_ratio), round((x[1]-min_c_y)/screen_ratio)) for x in normalized_points]
+        vector_points = [(round((x[0]-min_c_x)/screen_ratio, 6), round((x[1]-min_c_y)/screen_ratio), 6) for x in normalized_points]
 
         # Set the drawing's position relative to the frame.
         base_width = target_frame.get("width", 0)
@@ -868,11 +1111,11 @@ def add_ps2canvas(
         denominator_y = pysn.XC_RESOLUTIONS[series][1]
 
         if pysn.XC_HORIZONTAL_PAGES:
-            freedraw_x = round((page_number - 1)*(pysn.XC_PAGE_SPACING + base_width) + min_c_x + base_width * min_c_x / denominator_x)
-            freedraw_y = round(min_c_y+base_height*min_c_y/denominator_y)
+            freedraw_x = round((page_number - 1)*(pysn.XC_PAGE_SPACING + base_width) + min_c_x + base_width * min_c_x / denominator_x, 6)
+            freedraw_y = round(min_c_y+base_height*min_c_y/denominator_y, 6)
         else:
-            freedraw_x = round(min_c_x+base_width*min_c_x/denominator_x)
-            freedraw_y = round((page_number-1)*(pysn.XC_PAGE_SPACING+base_height)+min_c_y+base_height*min_c_y/denominator_y)
+            freedraw_x = round(min_c_x+base_width*min_c_x/denominator_x, 6)
+            freedraw_y = round((page_number-1)*(pysn.XC_PAGE_SPACING+base_height)+min_c_y+base_height*min_c_y/denominator_y, 6)
 
         # Compute the bounding box of the provided vector points.
         if vector_points:
@@ -1012,18 +1255,24 @@ def note2ex(note_fn, blank_pages=0, screen_ratio=pysn.XC_SCREEN_RATIO):
     try:
         if blank_pages != 0:
             try:
-                exca_file, _ = create_pages(note_fn, blank_pages, ocr_layer=False, screen_ratio=screen_ratio)
-                # Get the current working directory
-                current_directory = os.getcwd()
-                # Define the path for the new directory
-                blank_directory = os.path.join(current_directory, 'blank')
-                # Check if the directory already exists
-                if not os.path.exists(blank_directory):
-                    # Create the directory
-                    os.mkdir(blank_directory)
-                output_fn = os.path.join(blank_directory, f'{note_fn}_{blank_pages}_pager.excalidraw')
+                exca_file, _, new_template = create_pages(note_fn, blank_pages, ocr_layer=False, screen_ratio=screen_ratio)
+                # if the filename is a series, we know it's a blank template
+                if new_template:
+                    # Get the current working directory
+                    current_directory = os.getcwd()
+                    # Define the path for the new directory
+                    blank_directory = os.path.join(current_directory, 'blank')
+                    # Check if the directory already exists
+                    if not os.path.exists(blank_directory):
+                        # Create the directory
+                        os.mkdir(blank_directory)
+                    output_fn = os.path.join(blank_directory, f'{note_fn}_{blank_pages}_pager.excalidraw')
+                    print(f'  > Generated file: {output_fn}')
+                else:
+                    output_fn = note_fn
+                    print(f'  > Updated file: {output_fn}')
                 pysn.save_json(output_fn, exca_file)
-                print(f'  > Generated file: {output_fn}')
+
             except Exception as e:
                 print(f'*** Creating pages: {e}')
             exit(1)
@@ -1038,7 +1287,7 @@ def note2ex(note_fn, blank_pages=0, screen_ratio=pysn.XC_SCREEN_RATIO):
 
         page_nb = len(pen_strokes_dict.keys())
 
-        exca_file, _ = create_pages(series, page_nb, ocr_layer=ocr_file, screen_ratio=screen_ratio)
+        exca_file, _, _ = create_pages(series, page_nb, ocr_layer=ocr_file, screen_ratio=screen_ratio)
 
         # Parse the dictionary of totalpath objects
 
@@ -1130,6 +1379,7 @@ def extract_penstrokes_by_page(excalidraw_filename, screen_ratio, page_elements=
                     print('   > Loading a scene with horizontal pages')
                 else:
                     print('   > Loading a scene with vertical pages')
+                print()
                 max_horizontal_pixels, max_vertical_pixels, adb_screen_max_x, adb_screen_max_y = pysn.series_bounds(series)
                 initialization = False
 
@@ -1256,7 +1506,9 @@ def extract_text_by_page(excalidraw_filename, page_elements={}, screen_ratio=pys
 
     # Build a mapping from frame id to its properties.
     # We record page_number (from the frame's "name"), width, height, and absolute x, y.
+
     frame_mapping = {}
+    fonts_dict = {}
     for elem in excalidraw_file.get("elements", []):
         if elem.get("type") == "frame":
             name = elem.get("name", "")
@@ -1317,11 +1569,45 @@ def extract_text_by_page(excalidraw_filename, page_elements={}, screen_ratio=pys
         orig_y = recovered_min_c_y * screen_ratio
         orig_width = elem.get("width", 0) * screen_ratio
         orig_height = elem.get("height", 0) * screen_ratio
+        orig_text = elem.get("text").strip()
+        orig_weight = round(elem.get("fontSize")*pysn.FONT_RATIOS[1])
 
         # Build the dictionary for this text element.
         font_family = elem.get("fontFamily")
-        if font_family in pysn.XC_FONT_FAMILY:
-            mapped_font_family = pysn.XC_FONT_FAMILY[font_family].split('/')[1]
+        mapping_dict = globals()['pysn.XC_FONT_FAMILY']
+
+        if str(font_family) in mapping_dict:
+            mapped_font_family = mapping_dict[str(font_family)].split('/')[1]
+
+            a_weight_key = f'{mapped_font_family}@{orig_weight*screen_ratio}'
+            try:
+                if a_weight_key in fonts_dict:
+                    fonts_weight_adjustment = fonts_dict[a_weight_key]
+                else:
+                    fonts_adj_json_fn = os.path.join(pysn.CONFIG, f'{mapped_font_family}.json')
+                    fonts_adjustment = pysn.read_json(fonts_adj_json_fn)
+                    fonts_weight_adjustment_ = pysn.list_to_tree(fonts_adjustment['weight'])[(orig_weight-1.5)*screen_ratio]
+                    interval_ = next(iter(fonts_weight_adjustment_))
+                    fonts_weight_adjustment = pysn.NEEDLE_POINT_SIZES[interval_.data]
+                    fonts_dict[a_weight_key] = fonts_weight_adjustment
+                print(f'     - {a_weight_key}: {orig_text[:15]} ...')
+            except Exception as e:
+                print(f'    **- Loading weight json for {a_weight_key}: {e}')
+                if orig_weight <= 25:
+                    fonts_weight_adjustment = pysn.NEEDLE_POINT_SIZES["0.2"]
+                elif orig_weight <= 40:
+                    fonts_weight_adjustment = pysn.NEEDLE_POINT_SIZES["0.3"]
+                elif orig_weight <= 56:
+                    fonts_weight_adjustment = pysn.NEEDLE_POINT_SIZES["0.4"]
+                elif orig_weight <= 70:
+                    fonts_weight_adjustment = pysn.NEEDLE_POINT_SIZES["0.5"]
+                elif orig_weight <= 100:
+                    fonts_weight_adjustment = pysn.NEEDLE_POINT_SIZES["0.8"]
+                elif orig_weight <= 120:
+                    fonts_weight_adjustment = pysn.NEEDLE_POINT_SIZES["1"]
+                else:
+                    fonts_weight_adjustment = pysn.NEEDLE_POINT_SIZES["2"]
+
         text_dict = {
             "type": "text",
             "x": orig_x,
@@ -1329,8 +1615,9 @@ def extract_text_by_page(excalidraw_filename, page_elements={}, screen_ratio=pys
             "width": orig_width,
             "height": orig_height,
             "color": elem.get("strokeColor"),
-            "text": elem.get("text").strip(),
-            "fontSize": elem.get("fontSize")*pysn.FONT_RATIOS[1],
+            "text": orig_text,
+            "fontSize": fonts_weight_adjustment,
+            "originalFontSize": orig_weight,
             "font_ratio": pysn.FONT_RATIOS[1],
             "fontFamily": mapped_font_family
         }
@@ -1463,11 +1750,12 @@ def extract_shapes_by_page(excalidraw_filename, page_elements={}, screen_ratio=p
 
         page_elements.setdefault(page_number, []).append(freedraw_dict)
 
-    return page_elements, series
+    return page_elements
 
 
 def main():
     try:
+        new_user_settings = None
         # Initialize conversion variable
         do_conversion = True
         # Load the user_settings
@@ -1509,8 +1797,6 @@ def main():
                     help=f'{description}.  [{" ".join(a_variable_value)}]')
 
             else:
-                # padding = max(0, 25-len(f'--{long_param}'))
-                # parser.add_argument(f'-{short_param}', f'--{long_param}', type=param_type, default=a_variable_value, metavar=f"{'see ':>{padding}}{a_variable_name}", help=f'{description}. [%(default)s]')
                 if choices:
                     parser.add_argument(f'-{short_param}', f'--{long_param}', choices=choices, type=param_type, default=a_variable_value, help=f'{description}. [%(default)s]')
                 else:
@@ -1518,9 +1804,12 @@ def main():
 
         # Add a reset option (back to hard-coded values)
         parser.add_argument('--reset', action='store_true', help='Reset to hard-coded values: the values that are affected to digest.py global variables (in UPPERCASE when using the help)')
-
-        parser.add_argument('--blank', action='store_true', help=f'Creates a blank Excalidraw file with {pysn.PAGES} pages (use --page to change page #) \
-                            for {pysn.NOTEBOOK_DEVICE} device type (use --device to change device type)')
+        if 'pages' in user_settings:
+            nbb_pages = user_settings['pages']
+        else:
+            nbb_pages = pysn.PAGES
+        parser.add_argument('--blank', action='store_true', help=f"Creates a blank Excalidraw file with {nbb_pages} pages (use --page to change page #) \
+                            for {pysn.NOTEBOOK_DEVICE} device type (use --device to change device type)")
 
         # Parse command line arguments
         try:
@@ -1533,8 +1822,14 @@ def main():
 
         if first_arg == '--reset':
             # The user has decided to revert settings to hard-coded values
-            new_user_settings = {}
-            do_conversion = False
+            new_user_settings = {"filename": "demo/xc2sn/version1.06.excalidraw"}
+            pysn.save_user_settings(new_user_settings)
+            print()
+            print(f'SNEX Version {VERSION}')
+            print('-----------------')
+            print()
+            print('  > Your settings have reverted to default (hard-coded) values')
+            exit(1)
         else:
             # Now browse the args_back, handling boolean settings, if needed
             args_dict.pop('reset')
@@ -1566,13 +1861,6 @@ def main():
 
         pysn.save_user_settings(new_user_settings)  # Saving the last set of settings in 'user_settings.json'
 
-        # # # len_args = len(sys.argv)
-        # # # if len_args < 2 or len_args > 3:
-        # # #     print(f"Usage: python snex.py <filename> [screen_ration(optional, hardoded as {pysn.XC_SCREEN_RATIO})]")
-        # # #     print(' OR - to create blank scenes in root folder - examples: ')
-        # # #     print("    python snex.py 'N5 7' (will create 7 pages blank excalidraw file for Manta in root folder)")
-        # # #     print("    python snex.py 'N6 3' (will create 3 pages blank excalidraw file for other models)")
-        # # #     sys.exit(1)
         print()
         print(f'SNEX Version {VERSION}')
         print('-----------------')
@@ -1594,21 +1882,32 @@ def main():
 
         if '--font_name' in sys.argv or '-font_name' in sys.argv:
             do_conversion = False
-            print(f'  > Default font is now: {globals()['pysn.FONT_NAME']}')            
+            print(f'  > Default font is now: {globals()['pysn.FONT_NAME']}')
+
+        if '--xcns' in sys.argv or '-xcns' in sys.argv:
+            do_conversion = False
+            print(f'  > SVG number of sample points per segment is now: {globals()['pysn.XC_NUM_SAMPLES']}')
+
+        if '--xcstr' in sys.argv or '-xcstr' in sys.argv:
+            do_conversion = False
+            print(f'  > Thick/thin ratio for SVG pen weight is now: {globals()['pysn.XC_SVG_THIN_RATIO']}')
 
         if '--blank' in sys.argv or '-blank' in sys.argv:
             do_conversion = False
             blank_pages = globals()['pysn.PAGES']
             series = globals()['pysn.NOTEBOOK_DEVICE']
-            print(f'  > Creating {blank_pages} blank page(s) for {series} series and screen ratio {screen_ratio}')
-            note2ex(series, blank_pages=int(blank_pages), screen_ratio=screen_ratio)    
+
+            # Checking if filename was provided (ie. filename != versionfile)
+            filename_provided = f'version{VERSION}' not in filename
+            if filename_provided:
+                print(f'  > Adding {blank_pages} blank page(s) to {filename}')
+                note2ex(filename, blank_pages=int(blank_pages), screen_ratio=screen_ratio)
+            else:
+                print(f'  > Creating {blank_pages} blank page(s) for {series} series and screen ratio {screen_ratio}')
+                note2ex(series, blank_pages=int(blank_pages), screen_ratio=screen_ratio)
 
         if do_conversion:
 
-            # # # if len_args == 3:
-            # # #     screen_ratio = int(sys.argv[2])
-            # # # else:
-            # # #     screen_ratio = pysn.XC_SCREEN_RATIO
             # Get the file extension
             basename, file_extension = os.path.splitext(filename)
 
@@ -1621,10 +1920,27 @@ def main():
                 note2ex(filename, screen_ratio=screen_ratio)
             elif file_extension.lower() == '.excalidraw':
                 adict, series, screen_ratio, frame_mapping = extract_penstrokes_by_page(filename, screen_ratio)
-                extract_text_by_page(filename, adict, screen_ratio=screen_ratio)
-                extract_shapes_by_page(filename, adict, screen_ratio=screen_ratio)
-                templates_dict = load_excalidraw_images(filename, frame_mapping, series, screen_ratio)
+                adict = extract_text_by_page(filename, adict, screen_ratio=screen_ratio)
+                adict = extract_shapes_by_page(filename, adict, screen_ratio=screen_ratio)
+                adict, templates_dict = load_excalidraw_images(filename, frame_mapping, series, screen_ratio, adict)
+
                 output_fn = f'{basename}.json'
+
+                # Add advertisement pen-strokes (templates are not displaying for empty pages)
+                if adict == {}:
+                    adict = {
+                        1: [
+                            {'type': 'text',
+                             'x': 1370,
+                             'y': 120,
+                             'width': 425,
+                             'height': 45,
+                             'color': '#1e1e1e',
+                             'text': f'Generated by SNEX version {VERSION}',
+                             'fontSize': 200,
+                             'originalFontSize': 18,
+                             'font_ratio': 0.55,
+                             'fontFamily': 'barlow'}]}
 
                 if pysn.DEBUG_MODE:
                     pysn.save_json(output_fn, adict)
@@ -1662,23 +1978,10 @@ def main():
                                 a_text = an_element['text']
                                 a_width = an_element['width']
                                 a_height = an_element['height']
-                                a_font_size = an_element['fontSize']
+                                a_font_size = an_element['originalFontSize']
                                 a_font_family = an_element['fontFamily']
 
-                                if a_font_size <= 25:
-                                    new_weight = pysn.NEEDLE_POINT_SIZES["0.2"]
-                                elif a_font_size <= 40:
-                                    new_weight = pysn.NEEDLE_POINT_SIZES["0.3"]
-                                elif a_font_size <= 56:
-                                    new_weight = pysn.NEEDLE_POINT_SIZES["0.4"]
-                                elif a_font_size <= 70:
-                                    new_weight = pysn.NEEDLE_POINT_SIZES["0.5"]
-                                elif a_font_size <= 100:
-                                    new_weight = pysn.NEEDLE_POINT_SIZES["0.8"]
-                                elif a_font_size <= 120:
-                                    new_weight = pysn.NEEDLE_POINT_SIZES["1"]
-                                else:
-                                    new_weight = pysn.NEEDLE_POINT_SIZES["2"]
+                                new_weight = an_element['fontSize']
 
                                 starting_point = [an_element['x'], an_element['y']]
 
@@ -1798,10 +2101,15 @@ def main():
 
                     print()
                     print('   > Building Supernote notebook...')
+
                     pysn.psdict_to_note(full_dict_ps, titles_dict, filename+'.note', templates_dict=templates_dict)
     except Exception as e:
         print()
         print(f'*** SNEX: {e}')
+    finally:
+        if new_user_settings:
+            new_user_settings['filename'] = "demo/xc2sn/version1.06.excalidraw"
+            pysn.save_user_settings(new_user_settings)
 
 
 if __name__ == "__main__":

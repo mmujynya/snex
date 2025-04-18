@@ -2,14 +2,21 @@
     "type": "excalidraw",
     "version": 2,
     "source": "https://excalidraw.com",
+    "appState": {
+        "gridSize": 20,
+        "gridStep": 5,
+        "gridModeEnabled": false,
+        "viewBackgroundColor": "#ffffff"
+    },
+    "files": {},
     "elements": [
         {
-            "id": "a02fda79-67c7-4424-879c-753e4a66215c",
+            "id": "05f6ae23-7dc6-481f-8b56-c838b1d5b89d",
             "type": "frame",
             "x": 0,
             "y": 0,
-            "width": 640,
-            "height": 853,
+            "width": 1920,
+            "height": 2560,
             "angle": 0,
             "strokeColor": "#bbb",
             "backgroundColor": "transparent",
@@ -22,26 +29,26 @@
             "frameId": null,
             "index": "a3",
             "roundness": null,
-            "seed": 54660170,
-            "version": 6304,
-            "versionNonce": 932575443,
+            "seed": 459883207,
+            "version": 1814,
+            "versionNonce": 547855017,
             "isDeleted": false,
             "boundElements": [],
-            "updated": 1744136399918,
+            "updated": 1744922421838,
             "link": null,
             "locked": true,
             "name": "Page 1",
             "pysn": "N5",
             "horizontal": false,
-            "screen_ratio": 3
+            "screen_ratio": 1
         },
         {
-            "id": "6ceb8675-11d8-486f-8393-421c748ecdce",
+            "id": "5319bf87-2727-4bb0-adff-bdd7095feb7e",
             "type": "frame",
             "x": 0,
-            "y": 903,
-            "width": 640,
-            "height": 853,
+            "y": 2610,
+            "width": 1920,
+            "height": 2560,
             "angle": 0,
             "strokeColor": "#bbb",
             "backgroundColor": "transparent",
@@ -54,25 +61,18 @@
             "frameId": null,
             "index": "a4",
             "roundness": null,
-            "seed": 860121276,
-            "version": 4948,
-            "versionNonce": 390016340,
+            "seed": 36572127,
+            "version": 4953,
+            "versionNonce": 272840675,
             "isDeleted": false,
             "boundElements": [],
-            "updated": 1744136399919,
+            "updated": 1744922421839,
             "link": null,
             "locked": true,
             "name": "Page 2",
             "pysn": "N5",
             "horizontal": false,
-            "screen_ratio": 3
+            "screen_ratio": 1
         }
-    ],
-    "appState": {
-        "gridSize": 20,
-        "gridStep": 5,
-        "gridModeEnabled": false,
-        "viewBackgroundColor": "#ffffff"
-    },
-    "files": {}
+    ]
 }
