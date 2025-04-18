@@ -1760,7 +1760,7 @@ def main():
         do_conversion = True
         # Load the user_settings
         user_settings = pysn.load_user_settings()
-        # Argument parser setup
+        # Argument parser setup.
         epilog = ""
         parser = argparse.ArgumentParser(epilog=epilog, description="SNEX command line interpreter (CLI) for updating global variables.")
 
