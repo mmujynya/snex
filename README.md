@@ -5,7 +5,10 @@ See [YouTube video](https://youtu.be/p1sAisn_xd4?si=bEZ4xpuXrVyZGTjm)
 
 
 ## CHANGE LOG:
-- **Version 1.05**:
+- **Version 1.06**:
+  - Importing images from Excalidraw to Supernote
+  - Basic command line interface
+- Version 1.05:
   - Importing from Excalidraw to Supernote
 
 - Version 1.02: 
@@ -34,10 +37,11 @@ Python 3.12.2 (Version 3.13.x or later may not work)
    ```
 
 ## USAGE
-- Create an Excalidraw scene with P blank pages for a given series (‘N5’ for Manta, ‘N6’ for other models)
+- Command Line Interface help: python snex.py --help
+- Create an Excalidraw scene with a few blank pages 
   - This is needed because Excalidraw has an infinite canvas, while the Supernote format relies on pages of a given dimension. We simulate the SN pages by creating frame objects.
-  - Command: python snex.py "series P"
-  - For example: Python snex.py ‘N5 4’ will create a scene compatible for Manta with 4 pages in the root folder
+  - Command: python snex.py --blank
+  - You can change the number of default pages. For example, to have 5 pages, run: python snex.py --pages 5
 
 - Export a notebook to Excalidraw
   - Command: Python snex.py <filename with .note extension>
