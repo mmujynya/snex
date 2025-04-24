@@ -5,6 +5,8 @@ See [YouTube video](https://youtu.be/p1sAisn_xd4?si=bEZ4xpuXrVyZGTjm)
 
 
 ## CHANGE LOG:
+- **Version 1.07**:
+  - Fixed a bug where exception on contours exits with 3 instead of 4 variables
 - **Version 1.06**:
   - Importing images from Excalidraw to Supernote
   - Basic command line interface
