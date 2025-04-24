@@ -133,7 +133,7 @@ BLANK_TEMPLATE_PICTURE2R = os.path.join(
     CONFIG, 'blankmantar.png')
 BLANK_TEMPLATE_PICTURE2 = os.path.join(
     CONFIG, 'blankmanta.png')
-FILE_NAME = '"demo/xc2sn/version1.06.excalidraw'
+FILE_NAME = '"demo/xc2sn/version1.07.excalidraw'
 SPECIAL_LENGTH = 0x4000             # (*)
 SPECIAL_LENGTH_FOR_BLANK = 0x400    # (*)
 SPECIAL_LENGTH_MARKER = 0xff        # (*)
@@ -818,7 +818,7 @@ def get_pen_strokes_dict(note_fn, search_keyword=None):
                             print(f'> Failing contour Address: {a_position + skipper*24 + 290 + sequence_length + vector_size * 15}')
                             print(f'  Pen_stroke_size:{pen_stroke_size} at: {a_position}')
                             print(f' Vector_size:{vector_size} at: {a_position + 216}')
-                            return None, None, None
+                            return None, None, None, ''
 
                         for contour_index in range(contours_number):
                             contour_count_fails = 0

@@ -17,7 +17,7 @@ import numpy as np
 
 unique_list = []
 update_list = []
-VERSION = 1.06
+VERSION = 1.07
 
 
 def resize_strokes(strokes, target_width, target_height, dest_origin=(0, 0), preserve_aspect_ratio=True):
@@ -1330,7 +1330,6 @@ def note2ex(note_fn, blank_pages=0, screen_ratio=pysn.XC_SCREEN_RATIO):
         print(f'Generated file: {output_fn}')
     except Exception as e:
         print(f'*** note2ex: {e}')
-        print(ocr_file)
 
 
 def extract_penstrokes_by_page(excalidraw_filename, screen_ratio, page_elements={}):
